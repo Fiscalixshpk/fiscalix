@@ -1,0 +1,1165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+/* ════════════════════════════════════════
+   MOBILE SAFETY NET — parandalon tekst/elementë jashtë ekranit
+   Kjo vjen PARA gjithçkaje tjetër për të mbuluar çdo komponent,
+   edhe ata me inline style që s'i respektojnë media query specifike.
+════════════════════════════════════════ */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* iOS Safari fix — 100vh shpesh përfshin shiritin e adresës, duke shkaktuar
+   mbivendosje me elementë fixed (sidebar/bottom-nav). dvh është më i sigurt. */
+@supports (height: 100dvh) {
+  .full-height-mobile { height: 100dvh !important; }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+img, svg {
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  /* Chat widget flotant — ngrihet mbi BottomNav (58px + safe-area), jo mbivendosje */
+  .floating-chat-widget {
+    bottom: calc(58px + env(safe-area-inset-bottom) + 14px) !important;
+    right: 14px !important;
+  }
+  .floating-chat-box {
+    height: min(460px, 65vh) !important;
+  }
+
+  /* Çdo div/section me padding/margin të madh horizontal e shtrydh përmbajtjen — normalizojmë */
+  main, main > div {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  /* Tekste të gjata (titulle, paragrafë) — forco wrap në vend që të dalin jashtë */
+  h1, h2, h3, p, span, a, button, label {
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  /* ── INVOICE FORMS MOBILE FIX ── */
+  /* Forma e faturës — layout flex horizontal → vertikal */
+  [style*="display:'flex'"][style*="gap:24"],
+  [style*="display: flex"][style*="gap: 24"] {
+    flex-direction: column !important;
+  }
+
+  /* Grid 2 kolona → 1 kolonë në mobile */
+  [style*="gridTemplateColumns:'1fr 1fr'"],
+  [style*="gridTemplateColumns: '1fr 1fr'"],
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="gridTemplateColumns:'1fr 1fr 1fr'"],
+  [style*="gridTemplateColumns: '1fr 1fr 1fr'"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Sidebar totali — bëhet e plotë-gjerë */
+  [style*="maxWidth:290"],
+  [style*="maxWidth: 290"],
+  [style*="max-width: 290px"] {
+    max-width: 100% !important;
+    width: 100% !important;
+    position: static !important;
+  }
+
+  /* minWidth inputeve → 0 */
+  [style*="minWidth:300"],
+  [style*="minWidth: 300"] {
+    min-width: 0 !important;
+  }
+
+  /* Tabela artikujsh → scroll */
+  [style*="overflowX:'auto'"],
+  [style*="overflow-x: auto"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* Gridcolumn span → reset */
+  [style*="gridColumn:'1/-1'"],
+  [style*="gridColumn: '1/-1'"],
+  [style*="grid-column: 1/-1"] {
+    grid-column: 1 !important;
+  }
+
+  /* Çdo grid me kolona fikse (2, 3, 4) bëhet 1 kolonë në mobile, PAVARËSISHT
+     nëse u vendos via className ose inline style — kapëm rastin më të zakonshëm
+     duke synuar containers me display:grid e shumë kolona */
+  [style*="grid-template-columns: repeat(4"],
+  [style*="gridTemplateColumns: 'repeat(4"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  [style*="grid-template-columns: repeat(3"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* Containere flex me shumë kuti anash (kartonë statistikash, etj) → stack vertikal */
+  .finex-card, .kpi-card {
+    min-width: 0 !important;
+  }
+
+  /* Tabela që dalin jashtë → scroll horizontal i kontrolluar, jo overflow i lirë */
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
+  /* Modal/dialog që përdorin width fikse në px → kufizo te ekrani */
+  [style*="width: 'min("] {
+    max-width: 94vw !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Ekran shumë i vogël — çdo grid multi-kolonë bëhet 1 kolonë */
+  [style*="grid-template-columns: repeat(2"],
+  [style*="gridTemplateColumns: 'repeat(auto-fill"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Header titujt e mëdhenj (24-28px) bëhen më të vegjël për të mos shtrydhur layout-in */
+  h1 { font-size: 18px !important; }
+  h2 { font-size: 16px !important; }
+  h3 { font-size: 14px !important; }
+}
+
+
+/* ════════════════════════════════════════
+   DARK MODE (default)
+════════════════════════════════════════ */
+:root,
+.dark {
+  --bg-base:        #0B1020;
+  --bg-card:        #111827;
+  --bg-card-hover:  #1a2338;
+  --bg-input:       #1a2338;
+  --bg-sidebar:     #080E1C;
+  --bg-header:      rgba(8,14,28,0.95);
+  --bg-muted:       #1a2338;
+
+  --border:         rgba(255,255,255,0.08);
+  --border-strong:  rgba(255,255,255,0.15);
+  --border-purple:  rgba(123,44,245,0.35);
+
+  --text-1:         #F9FAFB;
+  --text-2:         #9CA3AF;
+  --text-3:         #6B7280;
+
+  --purple:         #7B2CF5;
+  --purple-light:   #9B5CF8;
+  --purple-dark:    #5A1FD6;
+  --purple-bg:      rgba(123,44,245,0.12);
+  --purple-glow:    rgba(123,44,245,0.25);
+
+  --green:          #10B981;
+  --amber:          #F59E0B;
+  --red:            #EF4444;
+  --blue:           #3B82F6;
+
+  --shadow:         0 8px 30px rgba(0,0,0,0.4);
+  --shadow-sm:      0 2px 10px rgba(0,0,0,0.3);
+  --radius:         12px;
+
+  /* Tailwind compat */
+  --background:     220 30% 6%;
+  --foreground:     0 0% 98%;
+  --card:           222 25% 9%;
+  --card-foreground:0 0% 98%;
+  --muted:          220 20% 13%;
+  --muted-foreground:220 10% 55%;
+  --border-tw:      220 20% 14%;
+  --input:          220 20% 13%;
+  --ring:           270 89% 57%;
+  --primary:        270 89% 57%;
+  --primary-foreground:0 0% 100%;
+}
+
+/* ════════════════════════════════════════
+   LIGHT MODE
+════════════════════════════════════════ */
+.light {
+  --bg-base:        #F4F2FF;
+  --bg-card:        #FFFFFF;
+  --bg-card-hover:  #FAFAFF;
+  --bg-input:       #FFFFFF;
+  --bg-sidebar:     #FFFFFF;
+  --bg-header:      rgba(255,255,255,0.98);
+  --bg-muted:       #F0EEFF;
+
+  --border:         #E2DCFF;
+  --border-strong:  #C4B5FD;
+  --border-purple:  rgba(123,44,245,0.25);
+
+  --text-1:         #111827;
+  --text-2:         #374151;
+  --text-3:         #6B7280;
+
+  --purple:         #7B2CF5;
+  --purple-light:   #9B5CF8;
+  --purple-dark:    #5A1FD6;
+  --purple-bg:      rgba(123,44,245,0.08);
+  --purple-glow:    rgba(123,44,245,0.15);
+
+  --green:          #059669;
+  --amber:          #D97706;
+  --red:            #DC2626;
+  --blue:           #2563EB;
+
+  /* Shadows stronger in light mode — gives depth */
+  --shadow:         0 4px 24px rgba(100,60,220,0.13), 0 1.5px 6px rgba(100,60,220,0.07);
+  --shadow-sm:      0 2px 10px rgba(100,60,220,0.09), 0 1px 3px rgba(100,60,220,0.05);
+  --shadow-card:    0 2px 12px rgba(100,60,220,0.10), 0 1px 4px rgba(0,0,0,0.04);
+
+  --background:     250 100% 97%;
+  --foreground:     220 30% 8%;
+  --card:           0 0% 100%;
+  --card-foreground:220 30% 8%;
+  --muted:          250 40% 96%;
+  --muted-foreground:220 10% 45%;
+  --border-tw:      250 40% 90%;
+  --input:          0 0% 100%;
+}
+
+/* ════════════════════════════════════════
+   BASE
+════════════════════════════════════════ */
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg-base);
+    color: var(--text-1);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    transition: background 0.25s ease, color 0.25s ease;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4, h5 {
+    font-family: 'Poppins', sans-serif;
+    color: var(--text-1);
+  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-purple); border-radius: 4px; }
+}
+
+/* ════════════════════════════════════════
+   COMPONENTS
+════════════════════════════════════════ */
+@layer components {
+
+  /* ── Card / Glass ──────────────────────────────── */
+  .glass {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+  .glass-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+  }
+
+  /* ── Generic Card ─────────────────────────────── */
+  .finex-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+
+  /* ── KPI Card ──────────────────────────────────── */
+  .kpi-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.25s ease;
+    cursor: default;
+  }
+  .kpi-card:hover {
+    border-color: var(--border-purple);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+  }
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at top left, var(--purple-bg) 0%, transparent 65%);
+    pointer-events: none;
+    border-radius: inherit;
+  }
+
+  /* ── Sidebar item ──────────────────────────────── */
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 11px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-3);
+    transition: all 0.18s ease;
+    cursor: pointer;
+    text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .sidebar-item:hover {
+    color: var(--text-1);
+    background: var(--bg-muted);
+    border-color: var(--border);
+  }
+  .sidebar-item.active {
+    color: var(--purple-light);
+    background: var(--purple-bg);
+    border-color: var(--border-purple);
+    font-weight: 600;
+  }
+  .sidebar-item.active svg { color: var(--purple-light); }
+
+  /* ── Inputs ────────────────────────────────────── */
+  .finex-input {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-size: 14px;
+    color: var(--text-1);
+    outline: none;
+    transition: all 0.18s;
+    font-family: 'Inter', sans-serif;
+  }
+  .finex-input::placeholder { color: var(--text-3); }
+  .finex-input:hover { border-color: var(--border-strong); }
+  .finex-input:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px var(--purple-bg);
+  }
+  select.finex-input { cursor: pointer; appearance: auto; }
+
+  /* ── Buttons ───────────────────────────────────── */
+  .finex-button-primary {
+    background: linear-gradient(135deg, var(--purple-dark), var(--purple), var(--purple-light));
+    color: #fff;
+    font-weight: 600;
+    border-radius: 10px;
+    border: none;
+    transition: all 0.2s;
+    box-shadow: 0 4px 15px var(--purple-glow);
+    font-family: 'Poppins', sans-serif;
+    cursor: pointer;
+  }
+  .finex-button-primary:hover {
+    box-shadow: 0 6px 20px var(--purple-glow);
+    transform: translateY(-1px);
+    opacity: 0.95;
+  }
+  .finex-button-primary:active { transform: scale(0.98); }
+  .finex-button-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .finex-button-secondary {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    color: var(--text-1);
+    font-weight: 500;
+    border-radius: 10px;
+    transition: all 0.18s;
+    cursor: pointer;
+  }
+  .finex-button-secondary:hover {
+    background: var(--bg-muted);
+    border-color: var(--border-strong);
+  }
+
+  /* ── Table ─────────────────────────────────────── */
+  .finex-table { width: 100%; font-size: 14px; border-collapse: collapse; }
+  .finex-table th {
+    padding: 11px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: var(--bg-muted);
+    font-family: 'Poppins', sans-serif;
+  }
+  .finex-table td {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-1);
+  }
+  .finex-table tr:hover td { background: var(--purple-bg); }
+
+  /* ── Page animation ────────────────────────────── */
+  .page-enter { animation: pageEnter 0.28s ease-out; }
+  @keyframes pageEnter {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Gradient text ─────────────────────────────── */
+  .gradient-text {
+    background: linear-gradient(135deg, var(--purple-light), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── Status badges ─────────────────────────────── */
+  .badge-paid    { background: rgba(16,185,129,0.1);  color: var(--green); border: 1px solid rgba(16,185,129,0.25);  border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600; display: inline-block; }
+  .badge-pending { background: rgba(245,158,11,0.1);  color: var(--amber); border: 1px solid rgba(245,158,11,0.25);  border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600; display: inline-block; }
+  .badge-overdue { background: rgba(239,68,68,0.1);   color: var(--red);   border: 1px solid rgba(239,68,68,0.25);   border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600; display: inline-block; }
+  .badge-draft   { background: rgba(107,114,128,0.1); color: var(--text-3);border: 1px solid rgba(107,114,128,0.2); border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600; display: inline-block; }
+}
+
+/* ── Sonner Toast ─────────────────────────────────── */
+[data-sonner-toaster] [data-sonner-toast] {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 14px !important;
+  border-radius: 12px !important;
+}
+
+.dark [data-sonner-toaster] [data-sonner-toast],
+[data-sonner-toaster][data-theme="dark"] [data-sonner-toast] {
+  background: #1a2338 !important;
+  border: 1px solid rgba(123,44,245,0.25) !important;
+  color: #F9FAFB !important;
+}
+
+.dark [data-sonner-toaster] [data-sonner-toast] [data-title],
+.dark [data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: #F9FAFB !important;
+}
+
+.light [data-sonner-toaster] [data-sonner-toast],
+[data-sonner-toaster][data-theme="light"] [data-sonner-toast] {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(123,44,245,0.2) !important;
+  color: #111827 !important;
+  box-shadow: 0 4px 20px rgba(123,44,245,0.1) !important;
+}
+
+/* ── LIGHT MODE — Depth & Shadows ─────────────────────── */
+.light .finex-card,
+.light [style*="var(--bg-card)"],
+.light .kpi-card {
+  box-shadow: 0 2px 12px rgba(100,60,220,0.08), 0 1px 3px rgba(0,0,0,0.04) !important;
+  color: #111827 !important;
+}
+
+.light .kpi-card p,
+.light .kpi-card span {
+  color: inherit;
+}
+
+.light .kpi-card .text-muted-foreground,
+.light .kpi-card .text-muted {
+  color: #6B7280 !important;
+}
+
+.light .kpi-card:hover {
+  box-shadow: 0 6px 24px rgba(100,60,220,0.14), 0 2px 6px rgba(0,0,0,0.06) !important;
+}
+
+/* Sidebar shadow in light mode */
+.light aside,
+.light [class*="sidebar"] {
+  box-shadow: 2px 0 16px rgba(100,60,220,0.08) !important;
+}
+
+/* Input fields more defined in light */
+.light .finex-input,
+.light input[class*="finex"],
+.light select[class*="finex"] {
+  box-shadow: 0 1px 3px rgba(100,60,220,0.06) inset !important;
+  border-color: #D8D1FF !important;
+}
+
+.light .finex-input:focus,
+.light input[class*="finex"]:focus {
+  box-shadow: 0 0 0 3px rgba(123,44,245,0.12), 0 1px 3px rgba(100,60,220,0.06) inset !important;
+  border-color: #9B5CF8 !important;
+}
+
+/* Buttons in light mode */
+.light .finex-button-secondary {
+  box-shadow: 0 1px 4px rgba(100,60,220,0.08) !important;
+}
+
+.light .finex-button-primary {
+  box-shadow: 0 4px 14px rgba(123,44,245,0.3) !important;
+}
+
+.light .finex-button-primary:hover {
+  box-shadow: 0 6px 20px rgba(123,44,245,0.4) !important;
+}
+
+/* Sidebar items hover */
+.light .sidebar-item:hover {
+  box-shadow: 0 1px 6px rgba(100,60,220,0.08) !important;
+}
+
+.light .sidebar-item.active {
+  box-shadow: 0 2px 10px rgba(123,44,245,0.15) !important;
+}
+
+
+
+/* ════════════════════════════════════════
+   BOTTOM NAV
+════════════════════════════════════════ */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 58px;
+  background: var(--bg-sidebar);
+  border-top: 1px solid var(--border);
+  z-index: 100;
+  padding: 0 4px;
+  padding-bottom: env(safe-area-inset-bottom);
+  gap: 0;
+}
+
+/* ════════════════════════════════════════
+   MOBILE — 768px and below
+════════════════════════════════════════ */
+/* KPI grid responsive */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+/* Invoice grid — 2 cols desktop, 1 col mobile */
+.invoice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 768px) {
+  /* Hide desktop sidebar */
+  aside { display: none !important; }
+
+  /* Show bottom nav */
+  .bottom-nav { display: flex; align-items: center; justify-content: space-around; }
+
+  /* Main content */
+  main { 
+    padding: 14px !important; 
+    padding-bottom: 72px !important;
+  }
+
+  /* Header */
+  header { padding: 0 14px !important; height: 52px !important; }
+  .header-search { display: none !important; }
+  .header-title { font-size: 15px !important; }
+
+  /* Hide non-essential header items */
+  .header-notif-text { display: none !important; }
+
+  /* ── Typography ── */
+  h1 { font-size: 20px !important; }
+  h2 { font-size: 17px !important; }
+
+  /* ── Grid layouts → mobile ── */
+  .grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+  .grid-3 { grid-template-columns: repeat(2, 1fr) !important; }
+  .grid-2 { grid-template-columns: 1fr !important; }
+  .mobile-grid-2 { grid-template-columns: repeat(2, 1fr) !important; }
+  .mobile-grid-1 { grid-template-columns: 1fr !important; }
+  .invoice-grid { grid-template-columns: 1fr !important; }
+
+  /* ── KPI Cards ── */
+  .kpi-card { padding: 12px !important; }
+
+  /* ── Page header row ── */
+  .page-header-row, 
+  .page-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+  .page-header-actions {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+  .page-header-actions > * { flex: 1; justify-content: center; }
+
+  /* ── Tables ── */
+  .finex-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .finex-table { min-width: 550px; }
+  .finex-table td, .finex-table th { 
+    font-size: 12px !important; 
+    padding: 9px 10px !important; 
+  }
+
+  /* ── Forms ── */
+  .finex-input { 
+    font-size: 16px !important;  /* prevent iOS zoom */
+    padding: 11px 12px !important;
+  }
+  select.finex-input { font-size: 16px !important; }
+  textarea.finex-input { font-size: 16px !important; }
+
+  /* ── Buttons ── */
+  .btn-full-mobile { width: 100% !important; justify-content: center !important; }
+
+  /* ── Filters row ── */
+  .filters-row {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  .filters-row > * { width: 100% !important; }
+
+  /* ── Invoice items table on mobile ── */
+  .items-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .items-table { min-width: 520px; }
+
+  /* ── Summary panel stacks below on mobile ── */
+  .form-layout { flex-direction: column !important; }
+  .form-sidebar { width: 100% !important; }
+
+  /* ── Invoice detail ── */
+  .invoice-detail-grid { grid-template-columns: 1fr !important; }
+  .invoice-actions-row { flex-direction: column !important; gap: 8px !important; }
+  .invoice-actions-row > * { width: 100% !important; }
+
+  /* ── Cards with flex ── */
+  .card-row { flex-direction: column !important; gap: 12px !important; }
+
+  /* ── Modals bottom sheet on mobile ── */
+  .modal-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  .modal-box {
+    border-radius: 20px 20px 0 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92vh !important;
+    overflow-y: auto !important;
+  }
+
+  /* ── Stats/Summary boxes ── */
+  .stats-row { 
+    display: grid !important; 
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* ── Expense list ── */
+  .expense-filters { flex-direction: column !important; }
+  
+  /* ── Accounting pages ── */
+  .accounting-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .quarter-row { flex-wrap: wrap !important; }
+  .quarter-btn { flex: 1; min-width: calc(50% - 4px) !important; }
+
+  /* ── Hide less important columns on mobile ── */
+  .hide-mobile { display: none !important; }
+  
+  /* ── Reports ── */
+  .reports-grid { grid-template-columns: 1fr !important; }
+
+  /* ── Settings ── */
+  .settings-grid { grid-template-columns: 1fr !important; }
+
+  /* ── AI Advisor cards ── */
+  .advisor-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ════════════════════════════════════════
+   SMALL MOBILE — 380px and below
+════════════════════════════════════════ */
+@media (max-width: 380px) {
+  .bottom-nav-label { display: none; }
+  .bottom-nav { height: 54px; }
+  main { padding: 10px !important; padding-bottom: 68px !important; }
+  h1 { font-size: 18px !important; }
+  .grid-4 { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+}
+
+/* ═══════════════════════════════════════
+   LANDING PAGE ISOLATION
+   Neutralizon çdo rregull global që ndërhyn me landing page-in.
+   Specificity e lartë (body .lp-body) kalon !important-et e mësipërme.
+═══════════════════════════════════════ */
+body .lp-body,
+body .lp-body *,
+body .lp-body h1,
+body .lp-body h2,
+body .lp-body h3,
+body .lp-body h4,
+body .lp-body p,
+body .lp-body span,
+body .lp-body a,
+body .lp-body button,
+body .lp-body label {
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  max-width: none !important;
+}
+
+@media (max-width: 768px) {
+  body .lp-body [class*="lp-fg"],
+  body .lp-body [class*="lp-dg"],
+  body .lp-body [class*="lp-tg"],
+  body .lp-body [class*="lp-pg"],
+  body .lp-body [class*="lp-ss"],
+  body .lp-body [class*="lp-cd-stats"],
+  body .lp-body [class*="lp-cl"],
+  body .lp-body [class*="lp-hero"],
+  body .lp-body [class*="lp-btns"],
+  body .lp-body [class*="lp-trust"] {
+    grid-template-columns: unset !important;
+  }
+  body .lp-body h1,
+  body .lp-body h2,
+  body .lp-body h3 {
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+  }
+  body .lp-body main,
+  body .lp-body main > div {
+    max-width: none !important;
+    overflow-x: visible !important;
+  }
+}
+
+/* ── FORM RESPONSIVE CLASSES ── */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.form-row {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.form-main {
+  flex: 1;
+  min-width: 0;
+}
+.form-sidebar {
+  width: 290px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 20px;
+}
+.form-span-2 {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 768px) {
+  .form-grid-2,
+  .form-grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .form-row {
+    flex-direction: column !important;
+  }
+  .form-sidebar {
+    width: 100% !important;
+    position: static !important;
+  }
+  .form-span-2 {
+    grid-column: 1 !important;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   MOBILE FIXES — Bug 1-5 (Mjekësi + Global)
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* BUG 1 — Login: logo dhe slogan */
+  .auth-logo-wrap img {
+    max-width: 120px !important;
+    height: auto !important;
+  }
+  .auth-slogan {
+    font-size: 10px !important;
+    margin-top: 8px !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+  }
+
+  /* BUG 2 — Search bar: ikona dhe teksti */
+  .search-input-wrap input.finex-input,
+  .search-input-wrap input {
+    padding-left: 36px !important;
+    font-size: 14px !important;
+  }
+  .search-input-wrap svg {
+    left: 10px !important;
+    width: 15px !important;
+    height: 15px !important;
+  }
+
+  /* BUG 3 — Quick Actions: 1 kolonë, jo 2 */
+  .quick-actions-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .quick-action-link {
+    padding: 12px 14px !important;
+    gap: 10px !important;
+  }
+  .quick-action-link span:first-child {
+    font-size: 16px !important;
+    flex-shrink: 0 !important;
+  }
+  .quick-action-link span:last-child {
+    font-size: 12px !important;
+    line-height: 1.3 !important;
+    word-break: break-word !important;
+  }
+
+  /* BUG 4 — Medical form: Data e kontrollit + patient search */
+  .medical-form-grid-3 {
+    grid-template-columns: 1fr !important;
+  }
+  .patient-search-wrap {
+    position: relative !important;
+    width: 100% !important;
+  }
+  .patient-search-wrap input {
+    padding-left: 36px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    font-size: 14px !important;
+  }
+  .patient-search-wrap svg {
+    left: 10px !important;
+    width: 15px !important;
+    height: 15px !important;
+    pointer-events: none !important;
+  }
+  /* Shto nga Sherbimet buton — mos zoom */
+  .add-service-btn {
+    font-size: 12px !important;
+    padding: 8px 12px !important;
+    white-space: nowrap !important;
+  }
+  /* Items table — horizontal scroll */
+  .invoice-items-table-wrap {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    width: 100% !important;
+  }
+  .invoice-items-table-wrap table {
+    min-width: 380px !important;
+    white-space: nowrap !important;
+  }
+
+  /* BUG 5 — Expense form: input me ikona */
+  .expense-form-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .expense-input-wrap {
+    position: relative !important;
+    width: 100% !important;
+  }
+  .expense-input-wrap input,
+  .expense-input-wrap select,
+  .expense-input-wrap textarea {
+    padding-left: 38px !important;
+    font-size: 14px !important;  /* iOS no-zoom */
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .expense-input-wrap svg,
+  .expense-input-wrap .lucide {
+    position: absolute !important;
+    left: 11px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    width: 15px !important;
+    height: 15px !important;
+    pointer-events: none !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Global — të gjitha input me ikonë brenda */
+  .relative input.finex-input,
+  .relative select.finex-input {
+    padding-left: 38px !important;
+    font-size: 14px !important;
+  }
+  /* Textarea me ikonë */
+  .relative textarea.finex-input {
+    padding-left: 38px !important;
+    padding-top: 10px !important;
+    font-size: 14px !important;
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════
+   MOBILE FIXES — Final Clean Version
+   ═══════════════════════════════════════════════════ */
+
+/* ── Desktop defaults (jashtë @media) ── */
+.quick-actions-grid        { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.expense-form-grid         { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.expense-input-wrap        { position: relative; }
+.expense-input-wrap input,
+.expense-input-wrap select,
+.expense-input-wrap textarea { padding-left: 40px; }
+.expense-input-wrap svg    { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; z-index: 1; width: 16px; height: 16px; }
+.expense-input-wrap:has(textarea) svg { top: 14px; transform: none; }
+
+@media (max-width: 768px) {
+
+  /* Body — parandalon overflow */
+  body { overflow-x: hidden !important; }
+
+  /* ── BUG 1: Login logo & slogan ── */
+  .auth-logo-wrap { justify-content: center; margin-bottom: 16px !important; }
+  .auth-logo-wrap img { height: 26px !important; width: auto !important; max-width: 130px !important; }
+  .auth-slogan { font-size: 10px !important; margin-top: 6px !important; padding: 0 8px; }
+
+  /* ── BUG 2: Search bar ── */
+  .search-input-wrap { position: relative; }
+  .search-input-wrap input {
+    padding-left: 38px !important;
+    font-size: 14px !important;
+    height: 44px !important;
+  }
+  .search-input-wrap > svg {
+    position: absolute !important;
+    left: 12px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    pointer-events: none !important;
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  /* ── BUG 3: Quick Actions ── */
+  .quick-actions-grid { grid-template-columns: 1fr !important; gap: 8px !important; }
+
+  /* ── BUG 4: Medical form ── */
+  .form-row    { flex-direction: column !important; }
+  .form-main   { min-width: 0 !important; width: 100% !important; }
+  .form-sidebar {
+    width: 100% !important;
+    max-width: 100% !important;
+    position: static !important;
+  }
+  .form-grid-2, .form-grid-3 { grid-template-columns: 1fr !important; gap: 10px !important; }
+  .form-span-2 { grid-column: 1 !important; }
+
+  /* Patient autocomplete */
+  .patient-search-wrap { position: relative; }
+  .patient-search-wrap input {
+    padding-left: 38px !important;
+    font-size: 14px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+  .patient-search-wrap > div > svg {
+    left: 12px !important;
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  /* ── BUG 5: Expense form ── */
+  .expense-form-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+  .expense-input-wrap input,
+  .expense-input-wrap select,
+  .expense-input-wrap textarea {
+    padding-left: 40px !important;
+    font-size: 14px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+  .expense-input-wrap svg {
+    position: absolute !important;
+    left: 12px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    pointer-events: none !important;
+    z-index: 1 !important;
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  /* ── iOS — parandalon auto-zoom ── */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="search"],
+  input[type="tel"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  .finex-input { font-size: 14px !important; }
+}
+
+/* Hide Next.js Dev Toolbar */
+nextjs-portal {
+  display: none !important;
+}
+[data-nextjs-dialog-overlay] {
+  display: none !important;
+}
+
+/* Hide Next.js Dev Toolbar completely */
+nextjs-portal,
+[data-nextjs-dialog],
+[data-nextjs-dialog-overlay],
+[data-nextjs-toast],
+#__next-build-watcher,
+.__nextjs_container_errors_button,
+[data-next-badge],
+body > nextjs-portal {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ── LOGIN: fshih panelin e djathtë (purple) në mobile ── */
+@media (max-width: 768px) {
+  /* Login right panel → hidden */
+  .login-right-panel { display: none !important; }
+  /* Login left panel → full width */
+  .login-left-panel { flex: 1 !important; border-right: none !important; }
+}
+
+/* ── POS PRODUCT CARDS: input font-size fix (iOS zoom) ── */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  select, textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── POS ORDER VIEW — Mobile Cart ── */
+@media (max-width: 768px) {
+  .pos-order-main { flex-direction: column !important; }
+  .pos-cart-panel {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 75vh !important;
+    border-left: none !important;
+    border-top: 2px solid var(--border) !important;
+    border-radius: 16px 16px 0 0 !important;
+    z-index: 50 !important;
+    overflow-y: auto !important;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+  }
+  .pos-cart-panel.open { transform: translateY(0) !important; }
+  .pos-cart-toggle { display: flex !important; }
+  .pos-product-area { flex: 1 !important; padding-bottom: 72px !important; }
+}
+@media (min-width: 769px) {
+  .pos-cart-toggle { display: none !important; }
+  .pos-order-main { flex-direction: row !important; }
+  .pos-cart-panel { position: static !important; transform: none !important; width: 320px !important; }
+}
+
+/* ── SIDEBAR: fshih në mobile për planin Arka ── */
+@media (max-width: 768px) {
+  .sidebar-arka { display: none !important; }
+  .main-arka { padding-bottom: 0 !important; }
+}
+
+/* ── Kur sidebar fshihet, content merr gjerësinë e plotë ── */
+@media (max-width: 768px) {
+  .sidebar-arka + div { width: 100% !important; }
+}
+
+/* ── BottomNavArka: vetëm mobile ── */
+.bottom-nav-arka { display: none; }
+@media (max-width: 768px) {
+  .bottom-nav-arka { display: block; }
+}
+
+/* ── THERMAL PRINT — 80mm ── */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+}
+
+/* ── HEADER: logo mobile ── */
+@media (max-width: 768px) {
+  .header-logo-mobile { display: flex !important; }
+  .header-search { display: none !important; }
+}
+
+/* ── POS Cashier Mode — fshih layout kur kasieri është aktiv ── */
+body.pos-cashier-mode .sidebar,
+body.pos-cashier-mode [class*="sidebar"],
+body.pos-cashier-mode aside,
+body.pos-cashier-mode header,
+body.pos-cashier-mode nav,
+body.pos-cashier-mode [class*="header"],
+body.pos-cashier-mode .bottom-nav,
+body.pos-cashier-mode [class*="bottom-nav"] {
+  display: none !important;
+}
+body.pos-cashier-mode main,
+body.pos-cashier-mode [class*="main"],
+body.pos-cashier-mode #main-content {
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+}
+
+body.pos-cashier-mode .sidebar,
+body.pos-cashier-mode aside.sidebar,
+body.pos-cashier-mode header.app-header {
+  display: none !important;
+}

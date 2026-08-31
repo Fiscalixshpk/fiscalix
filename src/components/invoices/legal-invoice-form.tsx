@@ -1,0 +1,334 @@
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Plus, Trash2, Loader2, ArrowLeft, Scale } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
+import { formatCurrency } from '@/lib/utils'
+import dynamic from 'next/dynamic'
+const ServicePicker = dynamic(() => import('./service-picker'), { ssr: false })
+
+interface Company {
+  id: string; name: string; vat_number?: string; address?: string
+  phone?: string; email?: string; is_vat_registered?: boolean; business_type?: string | null
+}
+
+interface LineItem {
+  description: string
+  unit: string
+  quantity: number
+  unit_price: number
+  total: number
+}
+
+const UNITS = ['orë', 'ditë', 'rast', 'konsultim', 'dokument', 'seancë']
+const INVOICE_TYPES = ['Faturë Honorari', 'Faturë Avans', 'Faturë Përfundimtare', 'Faturë Konsultimi']
+
+interface Props { company: Company; userId: string; nextInvoiceNumber?: string }
+
+export default function LegalInvoiceForm({ company, userId, nextInvoiceNumber }: Props) {
+  const router = useRouter()
+  const supabase = createClient()
+  const today = new Date().toISOString().split('T')[0]
+
+  const [form, setForm] = useState({
+    invoice_number: nextInvoiceNumber || '',
+    invoice_type: 'Faturë Honorari',
+    case_number: '',
+    issue_date: today,
+    due_date: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+    client_name: '',
+    client_address: '',
+    client_vat: '',
+    case_description: '',
+    advance_paid: '',
+    notes: '',
+    vat_rate: company.is_vat_registered ? 18 : 0,
+  })
+
+  const [items, setItems] = useState<LineItem[]>([
+    { description: '', unit: 'orë', quantity: 1, unit_price: 0, total: 0 }
+  ])
+  const [saving, setSaving] = useState(false)
+
+  function updateItem(i: number, field: keyof LineItem, value: string | number) {
+    setItems(prev => prev.map((item, j) => {
+      if (j !== i) return item
+      const updated = { ...item, [field]: value }
+      if (field === 'quantity' || field === 'unit_price') {
+        updated.total = +(Number(updated.quantity) * Number(updated.unit_price)).toFixed(2)
+      }
+      return updated
+    }))
+  }
+
+  const subtotal = items.reduce((s, i) => s + Number(i.total), 0)
+  const advancePaid = Number(form.advance_paid) || 0
+  const vatAmount = +(subtotal * form.vat_rate / 100).toFixed(2)
+  const totalWithVat = +(subtotal + vatAmount).toFixed(2)
+  const toPay = +(totalWithVat - advancePaid).toFixed(2)
+
+  async function save() {
+    if (!form.client_name.trim()) { toast.error('Shto emrin e klientit/palës'); return }
+    if (items.every(i => !i.description.trim())) { toast.error('Shto të paktën një shërbim'); return }
+    setSaving(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('Jo i autentikuar')
+
+      const notesText = [
+        form.case_description ? `Rasti/Çështja: ${form.case_description}` : '',
+        form.case_number ? `Nr. Dosjes: ${form.case_number}` : '',
+        advancePaid > 0 ? `Avans/Depozitë e paguar: €${advancePaid.toFixed(2)}` : '',
+        form.notes || '',
+      ].filter(Boolean).join('\n')
+
+      const { data: invoice, error } = await supabase.from('invoices').insert({
+        company_id: company.id,
+        created_by: user.id,
+        invoice_number: form.invoice_number,
+        issue_date: form.issue_date,
+        due_date: form.due_date,
+        client_name: form.client_name,
+        client_address: form.client_address || null,
+        client_vat: form.client_vat || null,
+        status: 'pending',
+        subtotal,
+        tax_rate: form.vat_rate,
+        tax_amount: vatAmount,
+        total_amount: totalWithVat,
+        total: totalWithVat,
+        payment_method: 'Bank Transfer',
+        currency: 'EUR',
+        notes: notesText || null,
+      }).select().single()
+
+      if (error) throw new Error(error.message)
+
+      const validItems = items.filter(i => i.description.trim())
+      if (validItems.length > 0) {
+        await supabase.from('invoice_items').insert(
+          validItems.map((item, i) => ({
+            invoice_id: invoice.id,
+            description: item.unit !== 'rast' && item.unit !== 'konsultim' && item.unit !== 'dokument'
+              ? `${item.description} (${item.quantity} ${item.unit})`
+              : item.description,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total: item.total,
+            sort_order: i,
+          }))
+        )
+      }
+
+      toast.success(`${form.invoice_type} u krijua: ${invoice.invoice_number}`)
+      router.push('/invoices')
+      router.refresh()
+    } catch (err: unknown) {
+      toast.error((err as Error).message)
+    } finally { setSaving(false) }
+  }
+
+  const I = { background: 'var(--bg-input,var(--bg-muted))', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px', color: 'var(--text-1)', fontSize: 13, width: '100%', outline: 'none' }
+  const L = { fontSize: 10, fontWeight: 700, color: 'var(--text-3)', display: 'block', marginBottom: 5, textTransform: 'uppercase' as const, letterSpacing: '0.06em' }
+  const S = { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px', marginBottom: 14 }
+
+  return (
+    <div className="page-enter">
+      <button onClick={() => router.back()} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:18, background:'none', border:'none', cursor:'pointer', color:'var(--text-3)', fontSize:13 }}>
+        <ArrowLeft size={15}/> Kthehu
+      </button>
+
+      <div className="form-row">
+        <div className="form-main">
+
+          {/* Tipi + Numri + Data */}
+          <div style={S}>
+            <div className="form-grid-3">
+              <div>
+                <label style={L}>Lloji i Faturës</label>
+                <select value={form.invoice_type} onChange={e=>setForm(p=>({...p,invoice_type:e.target.value}))} style={I}>
+                  {INVOICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={L}>Numri Faturës</label>
+                <input value={form.invoice_number} onChange={e=>setForm(p=>({...p,invoice_number:e.target.value}))} style={I}/>
+              </div>
+              <div>
+                <label style={L}>Nr. Dosjes/Rastit</label>
+                <input value={form.case_number} onChange={e=>setForm(p=>({...p,case_number:e.target.value}))} placeholder="D-2024/01" style={I}/>
+              </div>
+              <div>
+                <label style={L}>Data e Lëshimit</label>
+                <input type="date" value={form.issue_date} onChange={e=>setForm(p=>({...p,issue_date:e.target.value}))} style={I}/>
+              </div>
+              <div>
+                <label style={L}>Afati i Pagesës</label>
+                <input type="date" value={form.due_date} onChange={e=>setForm(p=>({...p,due_date:e.target.value}))} style={I}/>
+              </div>
+            </div>
+          </div>
+
+          {/* Klienti/Pala */}
+          <div style={S}>
+            <h3 style={{ fontFamily:'Poppins,sans-serif', fontSize:14, fontWeight:700, color:'var(--text-1)', marginBottom:14 }}>Klienti / Pala</h3>
+            <div className="form-grid-2">
+              <div className="form-span-2">
+                <label style={L}>Emri / Kompania *</label>
+                <input value={form.client_name} onChange={e=>setForm(p=>({...p,client_name:e.target.value}))} placeholder="Agim Berisha / ABC SH.P.K" style={I}/>
+              </div>
+              <div>
+                <label style={L}>Adresa</label>
+                <input value={form.client_address} onChange={e=>setForm(p=>({...p,client_address:e.target.value}))} placeholder="Prishtinë" style={I}/>
+              </div>
+              <div>
+                <label style={L}>NUI (opsionale)</label>
+                <input value={form.client_vat} onChange={e=>setForm(p=>({...p,client_vat:e.target.value}))} placeholder="800123456" style={I}/>
+              </div>
+              <div className="form-span-2">
+                <label style={L}>Rasti / Çështja Juridike</label>
+                <input value={form.case_description} onChange={e=>setForm(p=>({...p,case_description:e.target.value}))}
+                  placeholder="p.sh. Kontratë shitblerjeje, Divorc, Çështje penale..." style={I}/>
+              </div>
+            </div>
+          </div>
+
+          {/* Shërbimet juridike */}
+          <div style={S}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14, flexWrap:'wrap', gap:8 }}>
+              <h3 style={{ fontFamily:'Poppins,sans-serif', fontSize:14, fontWeight:700, color:'var(--text-1)' }}>Shërbimet Juridike</h3>
+              <ServicePicker companyId={company.id} onSelect={service => {
+                setItems(prev => [...prev, { description: service.name, unit: 'orë', quantity: 1, unit_price: service.price, total: service.price }])
+              }}/>
+            </div>
+
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', minWidth:480 }}>
+                <thead>
+                  <tr style={{ borderBottom:'1px solid var(--border)', background:'var(--bg-muted)' }}>
+                    {['Shërbimi / Puna Juridike','Njësia','Sasia','Tarifa','Totali',''].map((h,i) => (
+                      <th key={i} style={{ padding:'8px 10px', textAlign:i>=2?'right':'left', fontSize:9, fontWeight:700, color:'var(--text-3)', textTransform:'uppercase', letterSpacing:'0.06em', whiteSpace:'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, i) => (
+                    <tr key={i} style={{ borderBottom:'1px solid var(--border)' }}>
+                      <td style={{ padding:'6px 4px', minWidth:160 }}>
+                        <input value={item.description} onChange={e=>updateItem(i,'description',e.target.value)}
+                          placeholder="p.sh. Përfaqësim gjyqësor" style={{ ...I, fontSize:12 }}/>
+                      </td>
+                      <td style={{ padding:'6px 4px', width:100 }}>
+                        <select value={item.unit} onChange={e=>updateItem(i,'unit',e.target.value)} style={{ ...I, fontSize:12, padding:'9px 6px' }}>
+                          {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ padding:'6px 4px', width:80 }}>
+                        <input type="number" value={item.quantity||''} onChange={e=>updateItem(i,'quantity',parseFloat(e.target.value)||0)}
+                          placeholder="0" style={{ ...I, fontSize:12, textAlign:'right' }}/>
+                      </td>
+                      <td style={{ padding:'6px 4px', width:110 }}>
+                        <input type="number" value={item.unit_price||''} onChange={e=>updateItem(i,'unit_price',parseFloat(e.target.value)||0)}
+                          placeholder="€/orë" style={{ ...I, fontSize:12, textAlign:'right' }}/>
+                      </td>
+                      <td style={{ padding:'6px 10px', textAlign:'right', fontWeight:700, fontSize:13, color:'var(--text-1)', whiteSpace:'nowrap', width:100 }}>
+                        €{Number(item.total).toFixed(2)}
+                      </td>
+                      <td style={{ padding:'6px 4px', width:36 }}>
+                        {items.length > 1 && (
+                          <button onClick={()=>setItems(prev=>prev.filter((_,j)=>j!==i))}
+                            style={{ padding:6, borderRadius:7, border:'1px solid rgba(239,68,68,0.2)', background:'rgba(239,68,68,0.07)', color:'var(--text-1)', cursor:'pointer', display:'flex' }}>
+                            <Trash2 size={12}/>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <button onClick={()=>setItems(prev=>[...prev,{description:'',unit:'orë',quantity:1,unit_price:0,total:0}])}
+              style={{ display:'flex', alignItems:'center', gap:6, marginTop:10, padding:'7px 14px', borderRadius:9, border:'1px dashed rgba(139,92,246,0.35)', background:'transparent', color:'var(--text-1)', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+              <Plus size={13}/> Shto Shërbim
+            </button>
+          </div>
+
+          {/* Shënime */}
+          <div style={S}>
+            <label style={L}>Shënime / Kushte</label>
+            <textarea value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))}
+              rows={2} placeholder="Kushtet e pagesës, konfidencialiteti..." style={{ ...I, resize:'none' }}/>
+          </div>
+        </div>
+
+        {/* Sidebar */}
+        <div className="form-sidebar">
+          <div style={{ background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:14, padding:18, marginBottom:14 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16 }}>
+              <Scale size={15} style={{ color:'var(--text-1)' }}/>
+              <h3 style={{ fontFamily:'Poppins,sans-serif', fontSize:14, fontWeight:700, color:'var(--text-1)' }}>Kalkulimi</h3>
+            </div>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:14 }}>
+              {items.filter(i=>i.description && i.total>0).map((item,i)=>(
+                <div key={i} style={{ display:'flex', justifyContent:'space-between', fontSize:11, gap:8 }}>
+                  <span style={{ color:'var(--text-3)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {item.description} ({item.quantity} {item.unit})
+                  </span>
+                  <span style={{ color:'var(--text-1)', fontWeight:600, flexShrink:0 }}>€{item.total.toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, display:'flex', flexDirection:'column', gap:8 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:12 }}>
+                <span style={{ color:'var(--text-3)' }}>Honorari</span>
+                <span style={{ color:'var(--text-1)', fontWeight:600 }}>€{subtotal.toFixed(2)}</span>
+              </div>
+
+              {company.is_vat_registered && (
+                <div style={{ display:'flex', justifyContent:'space-between', fontSize:12 }}>
+                  <span style={{ color:'var(--text-3)' }}>TVSH ({form.vat_rate}%)</span>
+                  <span style={{ color:'var(--text-1)', fontWeight:600 }}>€{vatAmount.toFixed(2)}</span>
+                </div>
+              )}
+
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:12 }}>
+                <span style={{ color:'var(--text-3)' }}>Totali</span>
+                <span style={{ color:'var(--text-1)', fontWeight:700 }}>€{totalWithVat.toFixed(2)}</span>
+              </div>
+
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12 }}>
+                <label style={{ color:'var(--text-3)' }}>(-) Avans/Depozitë</label>
+                <div style={{ position:'relative', width:100 }}>
+                  <span style={{ position:'absolute', left:8, top:'50%', transform:'translateY(-50%)', color:'var(--text-3)', fontSize:11 }}>€</span>
+                  <input type="number" value={form.advance_paid} onChange={e=>setForm(p=>({...p,advance_paid:e.target.value}))}
+                    placeholder="0" style={{ ...I, paddingLeft:20, fontSize:12, padding:'5px 8px 5px 20px', width:'100%' }}/>
+                </div>
+              </div>
+
+              <div style={{ borderTop:'2px solid #8B5CF6', paddingTop:10, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:14, fontWeight:800, color:'var(--text-1)' }}>HONORARI</span>
+                <span style={{ fontFamily:'Poppins,sans-serif', fontSize:22, fontWeight:900, color:'var(--text-1)' }}>€{toPay.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding:'10px 14px', borderRadius:10, background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.2)', marginBottom:14, fontSize:11, color:'var(--text-3)', lineHeight:1.6 }}>
+            Tatimi 9% në burim aplikohet nëse klienti është subjekt tatimor
+          </div>
+
+          <button onClick={save} disabled={saving}
+            style={{ width:'100%', padding:13, borderRadius:12, background:'linear-gradient(135deg,#6D28D9,#8B5CF6)', color:'white', fontSize:14, fontWeight:700, border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, marginBottom:8 }}>
+            {saving ? <Loader2 size={15} className="animate-spin"/> : null}
+            {saving ? 'Duke ruajtur...' : `Lësho ${form.invoice_type}`}
+          </button>
+          <p style={{ fontSize:11, color:'var(--text-1)', textAlign:'center' }}>Do të shfaqet si "Në Pritje" deri në pagesë</p>
+        </div>
+      </div>
+    </div>
+  )
+}
