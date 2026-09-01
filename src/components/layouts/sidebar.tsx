@@ -690,16 +690,6 @@ export default function Sidebar({
               {PLAN_LABELS[plan] || plan}
             </span>
           </div>
-          {subscription?.status === 'trialing' && subscription?.trial_ends_at && (() => {
-            const daysLeft = Math.max(0, Math.ceil((new Date(subscription.trial_ends_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-            return (
-              <div style={{ marginTop: 4, padding: '4px 8px', borderRadius: 6, background: daysLeft <= 3 ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', border: `1px solid ${daysLeft <= 3 ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}` }}>
-                <p style={{ fontSize: 10, fontWeight: 700, color: daysLeft <= 3 ? '#EF4444' : '#F59E0B' }}>
-                  Trial: {daysLeft} ditë mbetur
-                </p>
-              </div>
-            )
-          })()}
           {subscription?.status === 'active' && subscription?.current_period_end && (
             <p style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>Skadon: {subscription.current_period_end?.split('T')[0]}</p>
           )}

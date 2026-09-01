@@ -137,7 +137,7 @@ export default function Header({ user, notifCount: initialCount = 0 }: Props) {
             }}>
             <Bell size={15} />
             {unread > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 17, height: 17, background: 'var(--purple)', borderRadius: 20, color:'var(--text-1)', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 17, height: 17, background: 'var(--purple)', borderRadius: 20, color:'#ffffff', fontSize: 9, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                 {unread > 9 ? '9+' : unread}
               </span>
             )}

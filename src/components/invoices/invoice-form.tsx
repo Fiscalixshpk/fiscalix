@@ -482,6 +482,32 @@ export default function InvoiceForm({ company, userId, nextInvoiceNumber, subscr
                       placeholder={`p.sh. Llogaria bankare: BKPR-12345\nAfati i pagesës: 30 ditë\nFaleminderit për bashkëpunimin!`}
                       className="finex-input" style={{ resize:'vertical', minHeight:80, fontFamily:'Geist Mono, monospace', fontSize:12 }}/>
                   </div>
+
+                  {/* Nënshkrimet */}
+                  <div style={{ gridColumn:'1/-1', borderTop:'1px solid var(--border)', paddingTop:16 }}>
+                    <h4 style={{ fontSize:13, fontWeight:700, color:'var(--text-1)', margin:'0 0 12px', fontFamily:'Poppins,sans-serif' }}>
+                      ✍️ Nënshkrimet
+                    </h4>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                      <div>
+                        <label style={{ fontSize:11, fontWeight:700, color:'var(--text-3)', display:'block', marginBottom:5, textTransform:'uppercase' as const, letterSpacing:'.05em' }}>
+                          Nënshkrimi Furnitorit
+                        </label>
+                        <div style={{ height:70, borderRadius:9, border:'1.5px dashed var(--border)', background:'var(--bg-muted)', display:'flex', alignItems:'flex-end', padding:'8px 12px' }}>
+                          <span style={{ fontSize:11, color:'var(--text-3)' }}>Furnitori / Data: _______________</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize:11, fontWeight:700, color:'var(--text-3)', display:'block', marginBottom:5, textTransform:'uppercase' as const, letterSpacing:'.05em' }}>
+                          Nënshkrimi Pranuesit
+                        </label>
+                        <div style={{ height:70, borderRadius:9, border:'1.5px dashed var(--border)', background:'var(--bg-muted)', display:'flex', alignItems:'flex-end', padding:'8px 12px' }}>
+                          <span style={{ fontSize:11, color:'var(--text-3)' }}>Pranusi / Data: _______________</span>
+                        </div>
+                      </div>
+                    </div>
+                    <p style={{ fontSize:11, color:'var(--text-3)', margin:'8px 0 0' }}>Nënshkrimet shfaqen te versioni i printuar i faturës</p>
+                  </div>
                 </>
               )}
             </div>
@@ -496,7 +522,7 @@ export default function InvoiceForm({ company, userId, nextInvoiceNumber, subscr
 
             <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
               <span style={{ fontSize:13, color:'var(--text-3)' }}>Nëntotali</span>
-              <span style={{ fontSize:13, fontWeight:600 }}>{formatCurrency(subtotal)}</span>
+              <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>{formatCurrency(subtotal)}</span>
             </div>
 
             {hasDiscount(company.business_type||null) && (
