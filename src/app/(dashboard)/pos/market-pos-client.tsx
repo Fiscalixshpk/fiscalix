@@ -394,7 +394,6 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<any>(null)
   const [savedCart, setSavedCart] = useState<any[]>([])
-  const [savedCart, setSavedCart] = useState<any[]>([])
   const [change, setChange] = useState('')
 
   // Modals
