@@ -32,7 +32,11 @@ interface Props {
   isMockMode:      boolean
 }
 
-const priceDisplay = (p: number) => (p / 10000).toFixed(2)
+const priceDisplay = (p: number) => {
+  const eur = p / 10000
+  // Show 4 decimals if price has sub-cent precision
+  return eur % 0.01 !== 0 ? eur.toFixed(4) : eur.toFixed(2)
+}
 
 function calcTotals(items: CartItem[]) {
   const TAX: Record<string, number> = { A: 0, C: 0, D: 0.08, E: 0.18 }
@@ -61,7 +65,12 @@ export default function POSClient({ userId, company, device, initialProducts, is
   const [cart,        setCart]        = useState<CartItem[]>([])
   const [search,      setSearch]      = useState('')
   const [activeCat,   setActiveCat]   = useState('all')
-  const [payMethod,   setPayMethod]   = useState<'cash'|'card'>('cash')
+  const [payMethod,   setPayMethod]   = useState<'cash'|'card'|'split'>('cash')
+  const [splitCash,   setSplitCash]   = useState<string>('')
+  const [splitCard,   setSplitCard]   = useState<string>('')
+  const [totalDiscount, setTotalDiscount] = useState<string>('')
+  const [discountType,  setDiscountType]  = useState<'value'|'percent'>('value')
+  const [itemDiscounts, setItemDiscounts] = useState<Record<string, {amount:string;type:'value'|'percent'}>>({})
   const [isOnline,    setIsOnline]    = useState(true)
   const [isLoading,   setIsLoading]   = useState(false)
   const [receipt,     setReceipt]     = useState<{
@@ -187,6 +196,26 @@ export default function POSClient({ userId, company, device, initialProducts, is
   function printReceipt(r: typeof receipt) {
     if (!r) return
     const PAY: Record<string, string> = { cash: 'Cash', card: 'Kartë', split: 'Split', card_debit: 'Kartë' }
+    
+    // Calculate total discount
+    const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0)
+    let discountCents = 0
+    if (totalDiscount) {
+      const d = parseFloat(totalDiscount)
+      if (discountType === 'percent') {
+        discountCents = Math.round(cartTotal * d / 100)
+      } else {
+        discountCents = Math.round(d * 100)
+      }
+    }
+    
+    // Split payment amounts
+    let splitPayment: { cash: number; card: number } | undefined
+    if (payMethod === 'split') {
+      const cashAmt  = Math.round(parseFloat(splitCash  || '0') * 100)
+      const cardAmt  = Math.round(parseFloat(splitCard  || '0') * 100)
+      splitPayment = { cash: cashAmt, card: cardAmt }
+    }
     const now = new Date()
 
     const html = `<!DOCTYPE html>
@@ -194,13 +223,20 @@ export default function POSClient({ userId, company, device, initialProducts, is
 <head>
 <meta charset="utf-8"/>
 <style>
+  @page{size:80mm auto;margin:0}
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Courier New',monospace;font-size:12px;width:80mm;color:#000;padding:3mm 4mm}
+  html,body{width:80mm;max-width:80mm}
+  body{font-family:'Courier New',monospace;font-size:12px;color:#000;padding:3mm 4mm}
   .c{text-align:center} .b{font-weight:bold} .lg{font-size:16px} .sm{font-size:10px;color:#555}
   .ln{border-top:1px dashed #000;margin:5px 0}
   .row{display:flex;justify-content:space-between;margin:2px 0;font-size:12px}
   .tot{font-size:14px;font-weight:bold}
   #qr{display:block;margin:4px auto}
+  @media print{
+    @page{size:80mm auto;margin:0}
+    html,body{width:80mm;max-width:80mm}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
 </style>
 </head>
 <body>
@@ -274,6 +310,8 @@ ${r.items.map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><span>
           items: normalizedItems, paymentMethod: payMethod,
           companyId: company.id, posDeviceId: device.id,
           operatorName: device.cashierName, couponId: 0,
+          totalDiscount: discountCents > 0 ? discountCents : undefined,
+          splitPayment: splitPayment,
         }),
       })
       const data = await res.json()
@@ -597,18 +635,49 @@ ${r.items.map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><span>
               <span style={{ color: 'var(--purple-light)', fontFamily: 'Poppins,sans-serif' }}>€{totals.totalEUR.toFixed(2)}</span>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, margin: '12px 0' }}>
-              {(['cash', 'card'] as const).map(m => (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 7, margin: '12px 0 8px' }}>
+              {(['cash', 'card', 'split'] as const).map(m => (
                 <button key={m} onClick={() => setPayMethod(m)}
                   style={{ padding: '8px', borderRadius: 9, border: payMethod === m ? '1.5px solid var(--purple)' : '1px solid var(--border)', background: payMethod === m ? 'var(--purple-bg)' : 'var(--bg-muted)', cursor: 'pointer', textAlign: 'center' }}>
                   {m === 'cash'
-                    ? <Banknote size={16} style={{ color: payMethod === 'cash' ? 'var(--purple-light)' : 'var(--text-3)', margin: '0 auto 3px' }} />
-                    : <CreditCard size={16} style={{ color: payMethod === 'card' ? 'var(--purple-light)' : 'var(--text-3)', margin: '0 auto 3px' }} />}
-                  <p style={{ fontSize: 10, fontWeight: 600, color: payMethod === m ? 'var(--purple-light)' : 'var(--text-3)' }}>
-                    {m === 'cash' ? 'Cash' : 'Kartë'}
+                    ? <Banknote size={15} style={{ color: payMethod === 'cash' ? 'var(--purple-light)' : 'var(--text-3)', margin: '0 auto 3px' }} />
+                    : m === 'card'
+                    ? <CreditCard size={15} style={{ color: payMethod === 'card' ? 'var(--purple-light)' : 'var(--text-3)', margin: '0 auto 3px' }} />
+                    : <span style={{ fontSize: 14, display: 'block', margin: '0 auto 3px' }}>💳+💵</span>}
+                  <p style={{ fontSize: 10, fontWeight: 600, color: payMethod === m ? 'var(--purple-light)' : 'var(--text-3)', margin: 0 }}>
+                    {m === 'cash' ? 'Cash' : m === 'card' ? 'Kartë' : 'Split'}
                   </p>
                 </button>
               ))}
+            </div>
+
+            {/* Split payment amounts */}
+            {payMethod === 'split' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginBottom: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-3)', display: 'block', marginBottom: 3 }}>Cash (€)</label>
+                  <input type="number" min="0" step="0.01" placeholder="0.00" value={splitCash}
+                    onChange={e => setSplitCash(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-1)', fontSize: 13, boxSizing: 'border-box' as const }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: 'var(--text-3)', display: 'block', marginBottom: 3 }}>Kartë (€)</label>
+                  <input type="number" min="0" step="0.01" placeholder="0.00" value={splitCard}
+                    onChange={e => setSplitCard(e.target.value)}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-1)', fontSize: 13, boxSizing: 'border-box' as const }} />
+                </div>
+              </div>
+            )}
+
+            {/* Discount */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center' }}>
+              <input type="number" min="0" step="0.01" placeholder="Zbritje..." value={totalDiscount}
+                onChange={e => setTotalDiscount(e.target.value)}
+                style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-1)', fontSize: 12, boxSizing: 'border-box' as const }} />
+              <button onClick={() => setDiscountType(t => t === 'value' ? 'percent' : 'value')}
+                style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg-muted)', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--text-2)', minWidth: 44 }}>
+                {discountType === 'value' ? '€' : '%'}
+              </button>
             </div>
 
             <button disabled={cart.length === 0 || isLoading || !device} onClick={checkout}
