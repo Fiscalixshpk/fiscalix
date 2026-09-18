@@ -214,9 +214,28 @@ export default function AppointmentsClient({ cashierName, company, services, ini
             <p style={{ fontSize: 32, fontWeight: 900, color:'var(--text-1)', fontFamily: 'Poppins,sans-serif', margin: '10px 0' }}>€{receipt.totalEUR}</p>
             <p style={{ fontSize: 11, color:'var(--text-1)', marginBottom: 10 }}>{receipt.receiptNumber}{receipt.transactionId ? ` · ATK #${receipt.transactionId}` : ''}</p>
             {receipt.qrCodeData && !receipt.qrCodeData.startsWith('MOCK') && <QRCanvas data={receipt.qrCodeData} size={100} />}
-            <button onClick={() => setReceipt(null)} className="finex-button-primary" style={{ width: '100%', padding: '11px 0', marginTop: 10 }}>
-              Mbyll
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button
+                onClick={() => {
+                  import('@/hooks/usePrintReceipt').then(({ buildATKReceipt }) => {
+                    import('@/components/pos/receipt-printer').then(({ printReceipt }) => {
+                      const atk = buildATKReceipt(
+                        { receiptNumber: receipt.receiptNumber, qrCodeData: receipt.qrCodeData, status: 'fiscalized', totals: { totalEUR: receipt.totalEUR, taxEUR: (parseFloat(receipt.totalEUR)*0.18/1.18).toFixed(2), noTaxEUR: (parseFloat(receipt.totalEUR)/1.18).toFixed(2) } },
+                        [{ name: receipt.clientName, price: Math.round(parseFloat(receipt.totalEUR)*10000), quantity: 1, unit: 'vizitë', taxRate: 'E' }],
+                        company,
+                        { paymentMethod: payMethod || 'cash', operatorName: cashierName }
+                      )
+                      printReceipt(atk)
+                    })
+                  })
+                }}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1.5px solid var(--border)', background: 'white', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                🖨️ Printo
+              </button>
+              <button onClick={() => setReceipt(null)} className="finex-button-primary" style={{ flex: 2, padding: '11px 0' }}>
+                Mbyll
+              </button>
+            </div>
           </div>
         </div>
       )}

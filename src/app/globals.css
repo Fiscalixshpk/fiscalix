@@ -255,6 +255,11 @@ img, svg {
     font-family: 'Poppins', sans-serif;
     color: var(--text-1);
   }
+  /* Light mode global fix — inherit color from body */
+  .light p:not([style*="color"]),
+  .light span:not([style*="color"]) {
+    color: inherit;
+  }
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border-purple); border-radius: 4px; }

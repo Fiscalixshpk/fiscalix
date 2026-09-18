@@ -65,6 +65,8 @@ export default function POSHistoryClient({ company, sales }: Props) {
 
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState<Sale | null>(null)
+  const [returnItems, setReturnItems]     = useState<Record<string, number>>({}) // itemId -> return quantity
+  const [isPartialReturn, setIsPartialReturn] = useState(false)
 
   async function cancelSale(sale: Sale, type: 'CANCEL' | 'RETURN') {
     setCancellingId(sale.id)
@@ -76,7 +78,13 @@ export default function POSHistoryClient({ company, sales }: Props) {
           originalSaleId: sale.id,
           originalCouponId: sale.coupon_id,
           type,
-          items: sale.sale_items,
+          items: type === 'RETURN' && isPartialReturn
+            ? sale.sale_items?.map((item: any) => ({
+                ...item,
+                quantity: returnItems[item.id] ?? item.quantity,
+                total: Math.round(item.total * (returnItems[item.id] ?? item.quantity) / item.quantity)
+              })).filter((item: any) => (returnItems[item.id] ?? item.quantity) > 0)
+            : sale.sale_items,
         }),
       })
       const data = await res.json()
@@ -368,6 +376,35 @@ export default function POSHistoryClient({ company, sales }: Props) {
             <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16 }}>
               Total: <strong>{fmt(confirmCancel.total_amount)}</strong>
             </p>
+
+            {/* Partial return option */}
+            {(confirmCancel as Sale & { _actionType: string })._actionType === 'RETURN' && confirmCancel.sale_items?.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <button onClick={() => { setIsPartialReturn(!isPartialReturn); setReturnItems({}) }}
+                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: isPartialReturn ? 'var(--purple-bg)' : 'var(--bg-muted)', color: isPartialReturn ? 'var(--purple-light)' : 'var(--text-3)', cursor: 'pointer', fontWeight: 600 }}>
+                    {isPartialReturn ? '✓ Kthim i Pjesshëm' : 'Kthim i Pjesshëm'}
+                  </button>
+                </div>
+                {isPartialReturn && (
+                  <div style={{ background: 'var(--bg-muted)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {confirmCancel.sale_items.map((item: any) => (
+                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <p style={{ fontSize: 12, color: 'var(--text-1)', margin: 0, flex: 1 }}>{item.name}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Max: {item.quantity}</p>
+                          <input type="number" min="0" max={item.quantity} step="1"
+                            value={returnItems[item.id] ?? item.quantity}
+                            onChange={e => setReturnItems(p => ({ ...p, [item.id]: Math.min(item.quantity, Math.max(0, Number(e.target.value))) }))}
+                            style={{ width: 56, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-1)', fontSize: 12, textAlign: 'center' }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <p style={{ fontSize: 12, color: 'var(--text-3)', lineHeight: 1.5, marginBottom: 20, padding: '10px 12px', background: 'var(--bg-muted)', borderRadius: 8 }}>
               {(confirmCancel as Sale & { _actionType: string })._actionType === 'CANCEL'
                 ? 'Do të krijohet kupon CANCEL me referencë të kuponit origjinal. Kjo veprim regjistrohet te ATK.'

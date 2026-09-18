@@ -12,6 +12,7 @@ import {
   Printer, Search, ShoppingCart, Eye, EyeOff, Shield, UserCheck
 } from 'lucide-react'
 import QRCanvas from '@/components/pos/qr-canvas'
+import { buildATKReceipt } from '@/hooks/usePrintReceipt'
 import { printReceipt } from '@/components/pos/receipt-printer'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -392,6 +393,8 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
   const [payMethod, setPayMethod] = useState<'cash'|'card'|'debt'>('cash')
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<any>(null)
+  const [savedCart, setSavedCart] = useState<any[]>([])
+  const [savedCart, setSavedCart] = useState<any[]>([])
   const [change, setChange] = useState('')
 
   // Modals
@@ -513,6 +516,7 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
       const res = await fetch('/api/pos/fiscalize', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error||'Gabim')
+      setSavedCart([...cart])
       setReceipt(data)
       setShift(s=>({...s, [payMethod==='cash'?'total_cash':'total_card']: s[payMethod==='cash'?'total_cash':'total_card']+totals.total}))
       setCart([]); setDebtClient(null)
@@ -796,7 +800,13 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
             <p style={{ fontSize:13, color:'#6B7280', marginBottom:20 }}>FIC: {receipt.fic?.slice(0,16)}...</p>
             {receipt.qrCode && <div style={{ margin:'0 auto 20px', width:140, height:140 }}><QRCanvas value={receipt.qrCode} size={140}/></div>}
             <div style={{ display:'flex', gap:10 }}>
-              <button onClick={()=>printReceipt({ company, items: cart.map(i=>({name:i.name,quantity:i.quantity,price:i.price,taxRate:i.taxRate,discount:i.discount})), total:totals.total, tax:totals.tax, paymentMethod:payMethod, iic:receipt?.iic, fic:receipt?.fic, receiptNumber:receipt?.receiptNumber, qrCode:receipt?.qrCode, operator:currentCashier?.name })} style={{ flex:1, padding:12, borderRadius:10, border:'1.5px solid #E2DCFF', background:'white', fontSize:13, fontWeight:600, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+              <button onClick={()=>{
+                const atk = buildATKReceipt(receipt, savedCart, company, {
+                  paymentMethod: payMethod,
+                  operatorName: currentCashier?.name
+                })
+                printReceipt(atk)
+              }} style={{ flex:1, padding:12, borderRadius:10, border:'1.5px solid #E2DCFF', background:'white', fontSize:13, fontWeight:600, color:'#374151', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
                 <Printer size={14}/> Printo
               </button>
               <button onClick={()=>setReceipt(null)} style={{ flex:2, padding:12, borderRadius:10, background:C.purpleL, color:'white', border:'none', fontSize:13, fontWeight:700, cursor:'pointer' }}>

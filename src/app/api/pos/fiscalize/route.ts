@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   try { payload = await req.json() }
   catch { return NextResponse.json({ error: 'Invalid body' }, { status: 400 }) }
 
-  const { items, paymentMethod, companyId, posDeviceId, operatorName, notes, registerNo } = payload
+  const { items, paymentMethod, companyId, posDeviceId, operatorName, notes, registerNo, totalDiscount, splitPayment } = payload
 
   if (!items?.length || !companyId) {
     return NextResponse.json({ error: 'items dhe companyId janë të detyrueshme' }, { status: 400 })
@@ -89,7 +89,10 @@ export async function POST(req: Request) {
     totalCents += item.total
     taxCents   += Math.round(item.total * rate / (1 + rate))
   }
-  const totals = { subtotal: totalCents, tax: taxCents, noTax: totalCents - taxCents, discount: 0, total: totalCents }
+  const discountCents = totalDiscount || 0
+  const finalTotal = Math.max(0, totalCents - discountCents)
+  const finalTax = discountCents > 0 ? Math.round(taxCents * finalTotal / totalCents) : taxCents
+  const totals = { subtotal: totalCents, tax: finalTax, noTax: finalTotal - finalTax, discount: discountCents, total: finalTotal }
 
   // ── FISCALIZE ────────────────────────────────────────────
   const issuedAt = new Date()
@@ -115,6 +118,8 @@ export async function POST(req: Request) {
     issuedAt,
     forceMock:      isMockMode && !device,
     verificationNo: (device as any)?.verification_code || undefined,
+    totalDiscount: discountCents > 0 ? discountCents : undefined,
+    splitPayment: splitPayment || undefined,
   })
 
   // ── SAVE SALE ─────────────────────────────────────────────
@@ -131,6 +136,8 @@ export async function POST(req: Request) {
       total_tax:          totals.tax,
       total_no_tax:       totals.noTax,
       total_discount:     totals.discount,
+      hash_chain:         result.currentHash || null,
+      integrity_check:    result.integrityCheck || null,
       payment_method:     paymentMethod,
       status:             result.status,
       atk_transaction_id: result.transactionId ? String(result.transactionId) : null,

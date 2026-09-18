@@ -51,6 +51,10 @@ export interface FiscalizeInput {
   issuedAt:       Date
   forceMock?:     boolean
   verificationNo?: string
+  previousHash?:  string  // Hash chain — hash i kuponit paraprak
+  itemDiscounts?: { index: number; amount: number; percent?: number }[] // Zbritje per artikull
+  totalDiscount?: number  // Zbritje totale në cents
+  splitPayment?:  { cash: number; card: number } // Pagesa të kombinuara
 }
 
 export interface FiscalizeOutput {
@@ -59,6 +63,10 @@ export interface FiscalizeOutput {
   qrCodeData?:   string
   receiptNumber?: string
   error?:        string
+  currentHash?:  string
+  integrityCheck?: string
+  posCoupon?:    Buffer
+  citizenCoupon?: Buffer
 }
 
 export interface ATKSubmitResult {
@@ -149,9 +157,12 @@ function encodeCouponItem(item: CartItem): Buffer {
   writeField(buf, 2, 0, item.price)   // €0.0001 units
   writeField(buf, 3, 2, item.unit || 'cope')
   writeField(buf, 4, 0, quantityInt)
-  writeField(buf, 5, 0, item.total)   // cents
+  writeField(buf, 5, 0, item.total)   // cents (after discount)
   writeField(buf, 6, 2, item.taxRate || 'E')
   writeField(buf, 7, 2, 'TT')
+  if ((item as any).discount && (item as any).discount > 0) {
+    writeField(buf, 8, 0, (item as any).discount) // discount in cents
+  }
   return Buffer.from(buf)
 }
 
@@ -184,11 +195,28 @@ function encodePosCoupon(input: FiscalizeInput, verificationNo: string): Buffer 
     writeField(buf, 11, 2, itemBuf)              // Items
   }
 
-  // Payment
-  const payBuf: number[] = []
-  writeField(payBuf, 1, 0, getPaymentType(input.paymentMethod))
-  writeField(payBuf, 2, 0, totalCents)          // Amount (already in €0.0001 units)
-  writeField(buf, 12, 2, Buffer.from(payBuf))   // Payments
+  // Payment — single or split
+  if (input.splitPayment && (input.splitPayment.cash > 0 || input.splitPayment.card > 0)) {
+    // Cash portion
+    if (input.splitPayment.cash > 0) {
+      const cashBuf: number[] = []
+      writeField(cashBuf, 1, 0, 1) // cash=1
+      writeField(cashBuf, 2, 0, input.splitPayment.cash)
+      writeField(buf, 12, 2, Buffer.from(cashBuf))
+    }
+    // Card portion
+    if (input.splitPayment.card > 0) {
+      const cardBuf: number[] = []
+      writeField(cardBuf, 1, 0, 2) // card=2
+      writeField(cardBuf, 2, 0, input.splitPayment.card)
+      writeField(buf, 12, 2, Buffer.from(cardBuf))
+    }
+  } else {
+    const payBuf: number[] = []
+    writeField(payBuf, 1, 0, getPaymentType(input.paymentMethod))
+    writeField(payBuf, 2, 0, totalCents)
+    writeField(buf, 12, 2, Buffer.from(payBuf))
+  }
 
   writeField(buf, 10, 0, unixTime)              // Time
   writeField(buf, 13, 0, totalCents)            // Total (already in €0.0001 units)
@@ -200,9 +228,29 @@ function encodePosCoupon(input: FiscalizeInput, verificationNo: string): Buffer 
 
   writeField(buf, 16, 0, input.totals.tax)
   writeField(buf, 17, 0, input.totals.noTax)
-  writeField(buf, 18, 0, (input.totals.discount || 0))
+  if (input.totals.discount && input.totals.discount > 0) {
+    writeField(buf, 18, 0, input.totals.discount)
+  }
 
   return Buffer.from(buf)
+}
+
+
+// ── HASH CHAIN ─────────────────────────────────────────────────
+// ATK requires: currentHash = SHA256(previousHash + payload_base64)
+// IntegrityCheck = SHA256(currentHash + timestamp)
+export function computeHashChain(
+  payloadBase64: string,
+  previousHash: string,
+  timestamp: number
+): { currentHash: string; integrityCheck: string } {
+  const currentHash = createHash('sha256')
+    .update(previousHash + payloadBase64)
+    .digest('hex')
+  const integrityCheck = createHash('sha256')
+    .update(currentHash + String(timestamp))
+    .digest('hex')
+  return { currentHash, integrityCheck }
 }
 
 // ── DIGITAL SIGNING (ECDSA P-256) ─────────────────────────────
@@ -298,6 +346,9 @@ export async function submitToATK(
 }
 
 // ── MAIN FISCALIZE ────────────────────────────────────────────
+// In-memory hash chain store (resets on restart, but persists per session)
+const hashChainStore: Map<string, string> = new Map()
+
 export async function fiscalize(input: FiscalizeInput): Promise<FiscalizeOutput> {
   console.log('Fiscalize:', {
     nui: input.businessNui, posId: input.posId,

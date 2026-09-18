@@ -547,13 +547,13 @@ export default function InvoiceForm({ company, userId, nextInvoiceNumber, subscr
                     <option value={8}>8%</option>
                     <option value={18}>18%</option>
                   </select>
-                  <span style={{ fontSize:13, fontWeight:600 }}>{formatCurrency(taxAmount)}</span>
+                  <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)' }}>{formatCurrency(taxAmount)}</span>
                 </div>
               )}
             </div>
 
             <div style={{ borderTop:'1px solid var(--border)', paddingTop:12, marginTop:4, display:'flex', justifyContent:'space-between' }}>
-              <span style={{ fontWeight:700, fontSize:15 }}>Totali</span>
+              <span style={{ fontWeight:700, fontSize:15, color:'var(--text-1)' }}>Totali</span>
               <span style={{ fontWeight:800, fontSize:20, color:'var(--purple-light)', fontFamily:'Poppins,sans-serif' }}>{formatCurrency(total)}</span>
             </div>
 

@@ -263,7 +263,7 @@ export default function ProductsClient({ companyId, businessType, initialView = 
                 </div>
                 <div>
                   <label style={S.label}>Çmimi (€) *</label>
-                  <input type="number" step="0.01" min="0" value={form.priceEUR} onChange={e=>setForm(f=>({...f,priceEUR:e.target.value}))} placeholder="1.50" style={S.input}/>
+                  <input type="number" step="0.0001" min="0" value={form.priceEUR} onChange={e=>setForm(f=>({...f,priceEUR:e.target.value}))} placeholder="1.5000" style={S.input}/>
                 </div>
               </div>
 

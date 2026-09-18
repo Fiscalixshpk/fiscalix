@@ -80,54 +80,31 @@ export default function ServicePOSClient({ cashierName, company, isMockMode, dev
     finally { setPaying(false) }
   }
 
-  async function printReceipt() {
+  function printReceipt() {
     if (!receipt) return
-    
-    // Gjenero QR code si data URL para printimit
-    let qrDataUrl = ''
-    if (receipt.qr) {
-      try {
-        const QRCode = (await import('qrcode')).default
-        qrDataUrl = await QRCode.toDataURL(receipt.qr, { width: 100, margin: 1 })
-      } catch { qrDataUrl = '' }
-    }
-
-    const css = `
-      @page { size: 80mm auto; margin: 0; }
-      * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; }
-      body { font-family: 'Courier New', monospace; font-size: 12px; width: 80mm; max-width: 80mm; margin: 0; padding: 4mm; }
-      .c { text-align: center; } .b { font-weight: bold; }
-      .l { border-top: 1px dashed #000; margin: 5px 0; }
-      .r { display: flex; justify-content: space-between; margin: 2px 0; }
-      .lg { font-size: 15px; } .xl { font-size: 18px; font-weight: 900; }
-      .sm { font-size: 10px; color: #555; }
-      .qr { display: block; margin: 8px auto; }
-    `
-    const html = `<!DOCTYPE html><html><head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=80mm">
-      <title>Kupon Fiskal</title>
-      <style>${css}</style>
-    </head><body>
-      <div class="c b lg">${company.name}</div>
-      <div class="c sm">NUI: ${company.nui}</div>
-      <div class="c sm">${receipt.time.toLocaleDateString('sq-AL')} ${receipt.time.toLocaleTimeString('sq-AL')}</div>
-      <div class="l"></div>
-      <div class="r"><span class="b">${receipt.serviceName}</span><span>€${receipt.price.toFixed(2)}</span></div>
-      <div class="l"></div>
-      <div class="r b"><span>TOTALI</span><span class="xl">€${receipt.price.toFixed(2)}</span></div>
-      <div class="r sm"><span>Pagesa</span><span>${receipt.payMethod==='cash'?'Cash':'Kartë'}</span></div>
-      <div class="l"></div>
-      <div class="c sm">Nr: ${receipt.nr}</div>
-      ${receipt.tx ? '<div class="c sm">TX: '+receipt.tx+'</div>' : ''}
-      ${qrDataUrl ? '<img src="'+qrDataUrl+'" class="qr" width="100" height="100" alt="QR"/><div class="c sm" style="font-size:9px">Skanoni për verifikim</div>' : ''}
-      <div class="c" style="margin-top:8px;font-size:11px">Faleminderit!</div>
-    </body></html>`
-    const w = window.open('', '_blank', 'width=400,height=600')!
-    w.document.write(html)
-    w.document.close()
-    w.focus()
-    setTimeout(() => { w.print(); setTimeout(() => w.close(), 1000) }, 500)
+    import('@/hooks/usePrintReceipt').then(({ buildATKReceipt }) => {
+      import('@/components/pos/receipt-printer').then(({ printReceipt: doPrint }) => {
+        const atk = buildATKReceipt(
+          {
+            receiptNumber: receipt.nr,
+            transactionId: receipt.tx,
+            qrCodeData:    receipt.qr,
+            status:        'fiscalized',
+            total:         Math.round(receipt.price * 100),
+          },
+          [{
+            name:     receipt.serviceName,
+            price:    Math.round(receipt.price * 10000),
+            quantity: 1,
+            unit:     'cope',
+            taxRate:  taxRate || 'E',
+          }],
+          company,
+          { paymentMethod: receipt.payMethod, operatorName: cashierName }
+        )
+        doPrint(atk)
+      })
+    })
   }
 
   const P = '#7C3AED'

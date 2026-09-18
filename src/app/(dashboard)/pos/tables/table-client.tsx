@@ -258,18 +258,20 @@ export default function RestaurantPOS({ userId, cashierName, company, initialPro
           e.preventDefault()
           if (view === 'order' && items.length > 0 && !paying) checkout()
           break
-        case 'F2': // Print kupon i fundit
+        case 'F2': // Print kupon i fundit (ATK)
           e.preventDefault()
           if (receipt) {
-            const el = document.getElementById('fiscal-receipt')
-            if (el) {
-              const w = window.open('','_blank','width=340,height=650')
-              if (w) {
-                w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Courier New,monospace;margin:0;padding:8px;width:80mm}@media print{@page{margin:0;size:80mm auto}}</style></head><body>'+el.innerHTML+'</body></html>')
-                w.document.close(); w.focus()
-                setTimeout(()=>{ w.print(); w.close() }, 400)
-              }
-            }
+            import('@/hooks/usePrintReceipt').then(({ buildATKReceipt }) => {
+              import('@/components/pos/receipt-printer').then(({ printReceipt }) => {
+                const atk = buildATKReceipt(
+                  { receiptNumber: receipt.receiptNumber, qrCodeData: receipt.qrCodeData, status: 'fiscalized', totals: { totalEUR: receipt.totalEUR, taxEUR: (parseFloat(receipt.totalEUR)*0.18/1.18).toFixed(2), noTaxEUR: (parseFloat(receipt.totalEUR)/1.18).toFixed(2) } },
+                  receipt.items.map((i: any) => ({ name: i.name, price: i.price, quantity: i.quantity, unit: i.unit||'cope', taxRate: i.tax_rate||'E' })),
+                  company,
+                  { paymentMethod: payMethod, operatorName: receipt.waiter?.name || cashierName }
+                )
+                printReceipt(atk)
+              })
+            })
           }
           break
         case 'F3': // Full screen
@@ -816,13 +818,30 @@ export default function RestaurantPOS({ userId, cashierName, company, initialPro
             <div style={{padding:'0 14px 14px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               <button
                 onClick={()=>{
-                  const el = document.getElementById('fiscal-receipt')
-                  if (!el) return
-                  const w = window.open('','_blank','width=340,height=650')
-                  if (!w) { alert('Lejo popup-et për printim'); return }
-                  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>@page{size:80mm auto;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact!important}body{font-family:Courier New,monospace;font-size:12px;width:80mm;max-width:80mm;margin:0;padding:4mm}button{display:none}.center{text-align:center}.bold{font-weight:bold}.line{border-top:1px dashed #000;margin:5px 0}.row{display:flex;justify-content:space-between;margin:2px 0}</style></head><body>'+el.innerHTML+'</body></html>')
-                  w.document.close(); w.focus()
-                  setTimeout(()=>{ w.print(); w.close() }, 500)
+                  import('@/hooks/usePrintReceipt').then(({ buildATKReceipt }) => {
+                    import('@/components/pos/receipt-printer').then(({ printReceipt }) => {
+                      const atk = buildATKReceipt(
+                        {
+                          receiptNumber: receipt.receiptNumber,
+                          qrCodeData:    receipt.qrCodeData,
+                          status:        'fiscalized',
+                          totals: {
+                            totalEUR: receipt.totalEUR,
+                            taxEUR:   (parseFloat(receipt.totalEUR) * 0.18 / 1.18).toFixed(2),
+                            noTaxEUR: (parseFloat(receipt.totalEUR) / 1.18).toFixed(2),
+                          }
+                        },
+                        receipt.items.map((i: any) => ({
+                          name: i.name, price: i.price,
+                          quantity: i.quantity, unit: i.unit || 'cope',
+                          taxRate: i.tax_rate || 'E',
+                        })),
+                        company,
+                        { paymentMethod: payMethod, operatorName: receipt.waiter?.name || cashierName }
+                      )
+                      printReceipt(atk)
+                    })
+                  })
                 }}
                 style={{padding:'11px 0',borderRadius:8,border:'1.5px solid #5B21B6',background:'white',cursor:'pointer',fontSize:13,fontWeight:700,color:'white'}}>
                 🖨️ Printo

@@ -112,6 +112,7 @@ export default function HealthModuleClient({ companyId, patients: initPatients, 
           date: new Date().toLocaleDateString('sq-AL'),
           time: new Date().toLocaleTimeString('sq-AL', { hour: '2-digit', minute: '2-digit' }),
           status: fiscal.status === 'offline' ? 'offline' : 'fiscalized',
+          qrCodeData: fiscal.qrCodeData || null,
         })
       } else {
         toast.error(fiscal.error || 'Fiskalizimi dështoi')
@@ -125,46 +126,29 @@ export default function HealthModuleClient({ companyId, patients: initPatients, 
 
   function printReceipt() {
     if (!fiscalReceipt) return
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Kupon Fiskal</title>
-    <style>
-      *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Courier New',monospace;padding:12px;width:80mm;font-size:12px;color:#111}
-      .center{text-align:center}.logo{font-size:16px;font-weight:900;letter-spacing:2px}
-      .meta{font-size:9px;color:#666;margin:3px 0}.atk{font-size:10px;color:#059669;font-weight:700}
-      .divider{border:none;border-top:1px dashed #999;margin:8px 0}
-      .row{display:flex;justify-content:space-between;margin-bottom:4px}
-      .total{display:flex;justify-content:space-between;font-size:16px;font-weight:900;border-top:2px solid #111;padding-top:6px;margin-top:4px}
-      .footer{text-align:center;font-size:8px;color:#aaa;margin-top:10px}
-      @media print{@page{margin:0;size:80mm auto}body{padding:4px}}
-    </style></head><body>
-    <div class="center">
-      <div class="logo">FISCALIX</div>
-      <div class="meta">${fiscalReceipt.date} · ${fiscalReceipt.time}</div>
-      <div class="meta">Nr: ${fiscalReceipt.receiptNumber}</div>
-      <div class="atk">${fiscalReceipt.status === 'offline' ? 'OFFLINE — do të fiskalizohet' : `ATK TX: ${fiscalReceipt.transactionId} ✓`}</div>
-    </div>
-    <hr class="divider">
-    <div class="row"><span>Pacienti:</span><span>${fiscalReceipt.patient}</span></div>
-    ${fiscalReceipt.diagnosis ? `<div class="row"><span>Shërbimi:</span><span>${fiscalReceipt.diagnosis.slice(0,25)}</span></div>` : ''}
-    <hr class="divider">
-    <div class="row"><span>Vizitë mjekësore x1</span><span>€${fiscalReceipt.amount.toFixed(2)}</span></div>
-    <hr class="divider">
-    <div class="total"><span>TOTALI:</span><span>€${fiscalReceipt.amount.toFixed(2)}</span></div>
-    <div class="footer">Faleminderit për vizitën tuaj</div>
-    <script>window.onload=()=>{window.print()}</script>
-    </body></html>`
-
-    const iframe = document.createElement('iframe')
-    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:none'
-    document.body.appendChild(iframe)
-    const doc = iframe.contentWindow?.document
-    if (!doc) return
-    doc.open(); doc.write(html); doc.close()
-    setTimeout(() => {
-      iframe.contentWindow?.focus()
-      iframe.contentWindow?.print()
-      setTimeout(() => document.body.removeChild(iframe), 2000)
-    }, 400)
+    import('@/hooks/usePrintReceipt').then(({ buildATKReceipt }) => {
+      import('@/components/pos/receipt-printer').then(({ printReceipt: doPrint }) => {
+        const amountCents = Math.round(fiscalReceipt.amount * 100)
+        const atk = buildATKReceipt(
+          {
+            receiptNumber: fiscalReceipt.receiptNumber,
+            status:        fiscalReceipt.status || 'fiscalized',
+            total:         amountCents,
+            tax:           Math.round(amountCents * 0.18 / 1.18),
+          },
+          [{
+            name:     `${fiscalReceipt.diagnosis ? fiscalReceipt.diagnosis + ' — ' : ''}Vizitë Mjekësore`,
+            price:    Math.round(fiscalReceipt.amount * 10000),
+            quantity: 1,
+            unit:     'cope',
+            taxRate:  'E',
+          }],
+          { name: 'Klinika', nui: '—', location_city: 'Kosovë' },
+          { paymentMethod: 'cash', operatorName: 'Mjek' }
+        )
+        doPrint(atk)
+      })
+    })
   }
 
   function generateReport() {

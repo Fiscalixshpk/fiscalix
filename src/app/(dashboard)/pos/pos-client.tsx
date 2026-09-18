@@ -10,6 +10,8 @@ import {
   AlertTriangle, Stethoscope, Scissors, Edit3
 } from 'lucide-react'
 import { getPOSConfig } from '@/lib/pos-business-config'
+import { buildATKReceipt } from '@/hooks/usePrintReceipt'
+import { printReceipt as doPrintReceipt } from '@/components/pos/receipt-printer'
 
 interface Product {
   id: string; name: string; price: number; category: string | null
@@ -195,100 +197,38 @@ export default function POSClient({ userId, company, device, initialProducts, is
   // ── THERMAL PRINT ────────────────────────────────────────────
   function printReceipt(r: typeof receipt) {
     if (!r) return
-    const PAY: Record<string, string> = { cash: 'Cash', card: 'Kartë', split: 'Split', card_debit: 'Kartë' }
-    
-    // Calculate total discount
-    const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0)
+
+    // Llogarit zbritjen
     let discountCents = 0
     if (totalDiscount) {
       const d = parseFloat(totalDiscount)
-      if (discountType === 'percent') {
-        discountCents = Math.round(cartTotal * d / 100)
-      } else {
-        discountCents = Math.round(d * 100)
-      }
+      const cartTotal = cart.reduce((s, i) => s + Math.round(i.price * i.quantity / 100), 0)
+      discountCents = discountType === 'percent'
+        ? Math.round(cartTotal * d / 100)
+        : Math.round(d * 100)
     }
-    
-    // Split payment amounts
+
+    // Split payment
     let splitPayment: { cash: number; card: number } | undefined
     if (payMethod === 'split') {
-      const cashAmt  = Math.round(parseFloat(splitCash  || '0') * 100)
-      const cardAmt  = Math.round(parseFloat(splitCard  || '0') * 100)
-      splitPayment = { cash: cashAmt, card: cardAmt }
+      splitPayment = {
+        cash: Math.round(parseFloat(splitCash || '0') * 100),
+        card: Math.round(parseFloat(splitCard || '0') * 100),
+      }
     }
-    const now = new Date()
 
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<style>
-  @page{size:80mm auto;margin:0}
-  *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:80mm;max-width:80mm}
-  body{font-family:'Courier New',monospace;font-size:12px;color:#000;padding:3mm 4mm}
-  .c{text-align:center} .b{font-weight:bold} .lg{font-size:16px} .sm{font-size:10px;color:#555}
-  .ln{border-top:1px dashed #000;margin:5px 0}
-  .row{display:flex;justify-content:space-between;margin:2px 0;font-size:12px}
-  .tot{font-size:14px;font-weight:bold}
-  #qr{display:block;margin:4px auto}
-  @media print{
-    @page{size:80mm auto;margin:0}
-    html,body{width:80mm;max-width:80mm}
-    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  }
-</style>
-</head>
-<body>
-<div class="c b lg">fiscalix</div>
-<div class="c b">${company.name}</div>
-<div class="c sm">NUI: ${company.nui || '—'} · ${company.locationCity}</div>
-<div class="ln"></div>
-<div class="row sm"><span>${now.toLocaleDateString('sq-AL',{day:'2-digit',month:'2-digit',year:'numeric'})}</span><span>${now.toLocaleTimeString('sq-AL',{hour:'2-digit',minute:'2-digit'})}</span></div>
-<div class="row sm"><span>Kupon: <b>${r.receiptNumber}</b></span><span>${PAY[r.payMethod] || r.payMethod}</span></div>
-${r.transactionId ? `<div class="c sm">ATK TX: #${r.transactionId}</div>` : ''}
-<div class="ln"></div>
-${r.items.map(i => `<div class="row"><span>${i.quantity}x ${i.name}</span><span>€${((i.customPrice??i.price)*i.quantity/10000).toFixed(2)}</span></div><div class="row sm"><span style="padding-left:10px">${i.unit} · ${i.taxRate}</span><span>€${((i.customPrice??i.price)/10000).toFixed(2)}</span></div>`).join('')}
-<div class="ln"></div>
-<div class="row sm"><span>Pa TVSH</span><span>€${r.noTaxEUR}</span></div>
-<div class="row sm"><span>TVSH</span><span>€${r.taxEUR}</span></div>
-<div class="ln"></div>
-<div class="row tot"><span>TOTAL</span><span>€${r.totalEUR}</span></div>
-<div class="ln"></div>
-<div class="c sm" style="margin:4px 0">Skanoni QR-in te fiskalizimi.atk-ks.org</div>
-<div id="qr"></div>
-<div class="c sm" style="margin-top:6px">Faleminderit!</div>
-<script>
-(function(){
-  try{
-    var d=document.createElement('div');
-    d.id='qrc';document.getElementById('qr').appendChild(d);
-    var s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js';
-    s.onload=function(){
-      QRCode.toCanvas(document.createElement('canvas'),'${r.qrCodeData.substring(0,300)}',{width:110,margin:1},function(e,c){
-        if(!e){document.getElementById('qr').innerHTML='';document.getElementById('qr').appendChild(c)}
-        window.print();
-      });
-    };
-    s.onerror=function(){window.print()};
-    document.head.appendChild(s);
-  }catch(e){window.print()}
-})();
-</script>
-</body></html>`
-
-    // Përdor iframe i fshehur — nuk bllokohet si popup
-    let iframe = document.getElementById('print-frame') as HTMLIFrameElement
-    if (!iframe) {
-      iframe = document.createElement('iframe')
-      iframe.id = 'print-frame'
-      iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;'
-      document.body.appendChild(iframe)
-    }
-    const doc = iframe.contentDocument || iframe.contentWindow?.document
-    if (!doc) { toast.error('Gabim printimi'); return }
-    doc.open(); doc.write(html); doc.close()
+    // Ndërto ReceiptData ATK-konforme
+    const atk = buildATKReceipt(r, cart.map(i => ({
+      name: i.name, price: i.price,
+      quantity: i.quantity, unit: i.unit || 'cope',
+      taxRate: i.taxRate || 'E',
+    })), company, {
+      paymentMethod: payMethod,
+      operatorName: cashierName,
+      totalDiscount: discountCents || undefined,
+      splitPayment,
+    })
+    doPrintReceipt(atk)
   }
 
   // ── CHECKOUT ─────────────────────────────────────────────────
