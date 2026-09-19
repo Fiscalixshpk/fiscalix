@@ -127,19 +127,21 @@ function buildReceiptHTML(data: ReceiptData): string {
 
   // ── QR Code — i vogël, i pastër, i lexueshëm
   const qrHTML = data.qrCodeData ? `
-<div class="center" style="margin:6px 0 2px;">
-  <div id="qr"></div>
-  <div style="font-size:8px;margin-top:3px;">Skanoni per verifikim ne ATK</div>
+<div style="text-align:center;margin:6px 0 2px;">
+  <div id="qr" style="display:inline-block;"></div>
+  <div style="font-size:8px;margin-top:3px;text-align:center;">Skanoni per verifikim ne ATK</div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
 <script>
-  new QRCode(document.getElementById('qr'), {
-    text: ${JSON.stringify(data.qrCodeData)},
-    width: 80, height: 80,
-    colorDark: '#000000',
-    colorLight: '#ffffff',
-    correctLevel: QRCode.CorrectLevel.M
-  });
+  window.onload = function() {
+    new QRCode(document.getElementById('qr'), {
+      text: ${JSON.stringify(data.qrCodeData)},
+      width: 90, height: 90,
+      colorDark: '#000000',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  };
 <\/script>` : ''
 
   // ── Logo RKS MF — e vogël, e pastër, si foto 1
@@ -180,14 +182,17 @@ function buildReceiptHTML(data: ReceiptData): string {
 body {
   font-family: Arial, Helvetica, sans-serif;
   width: 58mm;
+  max-width: 58mm;
   font-size: 10px;
   color: #000;
   background: #fff;
-  padding: 3mm 2mm;
+  padding: 2mm 1mm;
+  margin: 0 auto;
 }
 @media print {
   @page { margin: 0; size: 58mm auto; }
-  body { padding: 1mm 2mm; }
+  body { padding: 1mm 1mm; width: 58mm; max-width: 58mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 .center { text-align: center; }
 .right  { text-align: right; }
