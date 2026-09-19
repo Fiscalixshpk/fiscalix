@@ -400,4 +400,20 @@ export function buildReceiptFromAPIResponse(
     issuedAt:      new Date(),
     isOffline:     apiResponse.status === 'offline',
   }
-}
+}  // Logo RKS MF — SVG i pastër vetëm paths, pa image reference
+  const fiscalLogoHTML = `
+<div style="text-align:center;margin:6px 0 2px;">
+  <svg width="40" height="26" viewBox="0 0 18 20" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;">
+    <!-- Shield -->
+    <path d="M9,0.5 L17.5,3.5 L17.5,11 Q17.5,18 9,19.5 Q0.5,18 0.5,11 L0.5,3.5 Z"
+          fill="white" stroke="black" stroke-width="0.6"/>
+    <!-- 5 yjet -->
+    <text x="1.2" y="5.5" font-size="2.8" fill="#C8A84B" font-family="Arial" letter-spacing="0.5">★★★★★</text>
+    <!-- Harta Kosovës — e thjeshtuar -->
+    <path d="M5,9 L6,7.5 L7.5,7 L9,7.5 L10.5,7 L12,7.5 L13,9 L12,11 L9,12 L6,11 Z"
+          fill="#244AA5"/>
+    <path d="M5,9 L6,7.5 L7.5,7 L9,7.5 L10.5,7 L12,7.5 L13,9 L12,11 L9,12 L6,11 Z"
+          fill="#C8A84B" opacity="0.5"/>
+  </svg>
+  <div style="font-size:9px;font-weight:bold;letter-spacing:2px;margin-top:1px;">RKS  MF</div>
+</div>`
