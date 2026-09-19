@@ -177,35 +177,59 @@ function buildReceiptHTML(data: ReceiptData): string {
   <span class="value mono">${String(data.dailyCouponNo).padStart(4, '0')}</span>
 </div>` : ''
 
-  // QR Code
+  // QR Code — renderrohet si canvas me ngjyrë të zezë të plotë
   const qrHTML = data.qrCodeData ? `
-<div class="center" style="margin: 10px 0 4px;">
-  <canvas id="atk-qr" style="width:100px;height:100px;"></canvas>
+<div class="center" style="margin: 8px 0 4px;">
+  <div id="atk-qr-wrap" style="display:inline-block;padding:4px;background:#fff;border:2px solid #000;"></div>
   <div class="small" style="margin-top:4px;">Skanoni për verifikim në ATK</div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
 <script>
-  new QRCode(document.getElementById('atk-qr'), {
-    text: ${JSON.stringify(data.qrCodeData)},
-    width: 100, height: 100,
-    correctLevel: QRCode.CorrectLevel.M
-  });
+  (function(){
+    var wrap = document.getElementById('atk-qr-wrap');
+    new QRCode(wrap, {
+      text: ${JSON.stringify(data.qrCodeData)},
+      width: 110,
+      height: 110,
+      colorDark: '#000000',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+    // Force black on all canvas pixels after render
+    setTimeout(function(){
+      var canvas = wrap.querySelector('canvas');
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (var i = 0; i < img.data.length; i += 4) {
+        if (img.data[i] < 128) {
+          img.data[i] = 0; img.data[i+1] = 0; img.data[i+2] = 0; img.data[i+3] = 255;
+        } else {
+          img.data[i] = 255; img.data[i+1] = 255; img.data[i+2] = 255; img.data[i+3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+    }, 200);
+  })();
 <\/script>` : ''
 
-  // Logo fiskale RKS MF (e detyrueshme sipas Shtojcës A & F)
+  // Logo fiskale RKS MF — zyrtare sipas Shtojcës A dhe F (shield me flamur Kosove + 5 yje)
   const fiscalLogoHTML = `
 <div class="center" style="margin: 8px 0 4px;">
-  <svg width="48" height="32" viewBox="0 0 48 32" style="display:block;margin:0 auto;">
-    <rect width="48" height="32" rx="3" fill="#1a1a2e"/>
-    <polygon points="24,4 44,28 4,28" fill="none" stroke="#FFD700" stroke-width="1.5"/>
-    <circle cx="24" cy="14" r="4" fill="none" stroke="#FFD700" stroke-width="1"/>
-    <circle cx="14" cy="24" r="2" fill="#FFD700"/>
-    <circle cx="24" cy="24" r="2" fill="#FFD700"/>
-    <circle cx="34" cy="24" r="2" fill="#FFD700"/>
-    <circle cx="19" cy="20" r="1.5" fill="#FFD700"/>
-    <circle cx="29" cy="20" r="1.5" fill="#FFD700"/>
+  <svg width="44" height="52" viewBox="0 0 44 52" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:0 auto;">
+    <!-- Shield outline -->
+    <path d="M22 2 L42 10 L42 28 Q42 44 22 50 Q2 44 2 28 L2 10 Z"
+          fill="#1a3a6b" stroke="#000" stroke-width="1.5"/>
+    <!-- Flamuri i Kosovës — sfond blu me hartë dhe yje -->
+    <!-- Harta e Kosovës — simplified -->
+    <path d="M13 22 L14 19 L17 18 L20 19 L22 17 L25 18 L28 17 L30 19 L31 22 L29 25 L26 26 L22 27 L18 26 L15 25 Z"
+          fill="#D4A843" stroke="none"/>
+    <!-- 5 yjet e artë sipër hartës -->
+    <text x="11" y="18" font-size="4" fill="#D4A843" font-family="Arial">★ ★ ★ ★ ★</text>
+    <!-- Vija ndarëse e bardhë (si flamuri) -->
+    <line x1="8" y1="32" x2="36" y2="32" stroke="#fff" stroke-width="0.5" opacity="0.3"/>
   </svg>
-  <div style="font-weight:bold;font-size:10px;letter-spacing:2px;margin-top:2px;">RKS MF</div>
+  <div style="font-weight:900;font-size:11px;letter-spacing:3px;margin-top:2px;color:#000;">RKS MF</div>
 </div>`
 
   // e-kuponi label (për SEF — Shtojca F)
@@ -224,15 +248,15 @@ function buildReceiptHTML(data: ReceiptData): string {
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
     font-family: 'Courier New', Courier, monospace;
-    width: 80mm;
-    font-size: 11px;
+    width: 58mm;
+    font-size: 10px;
     color: #000;
     background: white;
-    padding: 4px 8px 8px;
+    padding: 3px 5px 6px;
   }
   @media print {
-    @page { margin: 0; size: 80mm auto; }
-    body { padding: 2px 6px 6px; }
+    @page { margin: 0; size: 58mm auto; }
+    body { padding: 1px 4px 4px; }
   }
   .center { text-align: center; }
   .right { text-align: right; }
@@ -399,7 +423,7 @@ export function printReceipt(data: ReceiptData): void {
   setTimeout(() => {
     w.print()
     w.close()
-  }, 800)
+  }, 1500)
 }
 
 // ── Preview (pa printim) ───────────────────────────────────────
