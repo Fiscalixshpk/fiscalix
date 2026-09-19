@@ -181,18 +181,17 @@ function buildReceiptHTML(data: ReceiptData): string {
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
   font-family: Arial, Helvetica, sans-serif;
-  width: 58mm;
-  max-width: 58mm;
-  font-size: 10px;
+  width: 100%;
+  font-size: 11px;
   color: #000;
   background: #fff;
-  padding: 2mm 1mm;
-  margin: 0 auto;
+  padding: 4px 6px;
+  margin: 0;
 }
 @media print {
   @page { margin: 0; size: 58mm auto; }
-  body { padding: 1mm 1mm; width: 58mm; max-width: 58mm; }
-  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { padding: 2px 4px; font-size: 11px; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
 .center { text-align: center; }
 .right  { text-align: right; }
@@ -202,14 +201,14 @@ body {
 
 /* Header */
 .co-name { font-size: 13px; font-weight: bold; text-align: center; margin-bottom: 1px; }
-.co-info  { font-size: 8px; text-align: center; line-height: 1.5; }
+.co-info  { font-size: 9px; text-align: center; line-height: 1.5; }
 
 /* Coupon title */
 .title { font-size: 11px; font-weight: bold; text-align: center; letter-spacing: 1px; margin: 5px 0 4px; }
 
 /* Table */
-table { width: 100%; border-collapse: collapse; font-size: 9px; }
-th { font-size: 8px; font-weight: bold; text-align: left; padding-bottom: 2px; }
+table { width: 100%; border-collapse: collapse; font-size: 10px; }
+th { font-size: 10px; font-weight: bold; text-align: left; padding-bottom: 2px; }
 th.right, td.right { text-align: right; }
 th.center, td.center { text-align: center; }
 td { padding: 1px 0; vertical-align: top; }
@@ -336,7 +335,7 @@ ${logoHTML}
 // ── Print ──────────────────────────────────────────────────────
 export function printReceipt(data: ReceiptData): void {
   const html = buildReceiptHTML(data)
-  const w = window.open('', '_blank', 'width=260,height=600,scrollbars=yes')
+  const w = window.open('', '_blank', 'width=320,height=700,scrollbars=yes')
   if (!w) { console.error('Popup i bllokuar'); return }
   w.document.write(html)
   w.document.close()
@@ -346,7 +345,7 @@ export function printReceipt(data: ReceiptData): void {
 
 export function previewReceipt(data: ReceiptData): void {
   const html = buildReceiptHTML(data)
-  const w = window.open('', '_blank', 'width=260,height=600,scrollbars=yes')
+  const w = window.open('', '_blank', 'width=320,height=700,scrollbars=yes')
   if (!w) return
   w.document.write(html)
   w.document.close()
