@@ -17,6 +17,8 @@ export interface SplitPayment {
 }
 
 export interface ReceiptData {
+  /** Kur ekziston, printohet kuponi zyrtar nga serveri (Neni 25.18 / Shtojca F) */
+  saleId?: string
   company: {
     name: string
     nui: string
@@ -336,7 +338,13 @@ ${logoHTML}
 }
 
 // ── Print ──────────────────────────────────────────────────────
+// Kuponi fiskal gjenerohet GJITHMONË nga serveri kur ka saleId: totalet, TVSH-ja dhe QR
+// vijnë nga databaza, jo nga shporta e klientit. HTML-i lokal mbetet vetëm si rezervë.
 export function printReceipt(data: ReceiptData): void {
+  if (data.saleId) {
+    import('@/lib/atk/print-client').then(({ printFiscalReceipt }) => printFiscalReceipt(data.saleId!))
+    return
+  }
   const html = buildReceiptHTML(data)
   const w = window.open('', '_blank')
   if (!w) { console.error('Popup i bllokuar'); return }
@@ -347,6 +355,10 @@ export function printReceipt(data: ReceiptData): void {
 }
 
 export function previewReceipt(data: ReceiptData): void {
+  if (data.saleId) {
+    import('@/lib/atk/print-client').then(({ previewFiscalReceipt }) => previewFiscalReceipt(data.saleId!))
+    return
+  }
   const html = buildReceiptHTML(data)
   const w = window.open('', '_blank', 'width=320,height=700,scrollbars=yes')
   if (!w) return
@@ -365,6 +377,7 @@ export function buildReceiptFromAPIResponse(
   const discount   = payload.totalDiscount || 0
 
   return {
+    saleId:        apiResponse.saleId,
     company: {
       name:      company.name,
       nui:       company.nui || '—',

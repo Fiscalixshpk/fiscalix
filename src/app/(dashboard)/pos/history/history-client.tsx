@@ -67,6 +67,7 @@ export default function POSHistoryClient({ company, sales }: Props) {
   const [confirmCancel, setConfirmCancel] = useState<Sale | null>(null)
   const [returnItems, setReturnItems]     = useState<Record<string, number>>({}) // itemId -> return quantity
   const [isPartialReturn, setIsPartialReturn] = useState(false)
+  const [cancelReason, setCancelReason]   = useState('')
 
   async function cancelSale(sale: Sale, type: 'CANCEL' | 'RETURN') {
     setCancellingId(sale.id)
@@ -78,6 +79,7 @@ export default function POSHistoryClient({ company, sales }: Props) {
           originalSaleId: sale.id,
           originalCouponId: sale.coupon_id,
           type,
+          reason: type === 'CANCEL' ? cancelReason : undefined,
           items: type === 'RETURN' && isPartialReturn
             ? sale.sale_items?.map((item: any) => ({
                 ...item,
@@ -91,8 +93,12 @@ export default function POSHistoryClient({ company, sales }: Props) {
       if (!res.ok) throw new Error(data.error)
       toast.success(`${type === 'CANCEL' ? 'Anulimi' : 'Kthimi'} u krye — kupon #${data.receiptNumber}`)
       setConfirmCancel(null)
-      // Refresh page
-      window.location.reload()
+      setCancelReason('')
+      if (data.saleId && data.status !== 'failed') {
+        const { printFiscalReceipt } = await import('@/lib/atk/print-client')
+        await printFiscalReceipt(data.saleId)
+      }
+      setTimeout(() => window.location.reload(), 1500)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gabim')
     } finally {
@@ -393,7 +399,7 @@ export default function POSHistoryClient({ company, sales }: Props) {
                         <p style={{ fontSize: 12, color: 'var(--text-1)', margin: 0, flex: 1 }}>{item.name}</p>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Max: {item.quantity}</p>
-                          <input type="number" min="0" max={item.quantity} step="1"
+                          <input type="number" min="0" max={item.quantity} step="any"
                             value={returnItems[item.id] ?? item.quantity}
                             onChange={e => setReturnItems(p => ({ ...p, [item.id]: Math.min(item.quantity, Math.max(0, Number(e.target.value))) }))}
                             style={{ width: 56, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-1)', fontSize: 12, textAlign: 'center' }} />
@@ -402,6 +408,25 @@ export default function POSHistoryClient({ company, sales }: Props) {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {(confirmCancel as Sale & { _actionType: string })._actionType === 'CANCEL' && (
+              <div style={{ marginBottom: 14 }}>
+                <label htmlFor="cancel-reason" style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                  Arsyeja e anulimit
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {['Gabim gjatë shtypjes', 'Artikull i gabuar', 'Çmim i gabuar', 'Klienti hoqi dorë'].map(r => (
+                    <button key={r} type="button" onClick={() => setCancelReason(r)}
+                      style={{ fontSize: 11, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border)', background: cancelReason === r ? 'var(--purple-bg)' : 'var(--bg-muted)', color: cancelReason === r ? 'var(--purple-light)' : 'var(--text-2)', cursor: 'pointer', fontWeight: 600 }}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <input id="cancel-reason" value={cancelReason} maxLength={120} onChange={e => setCancelReason(e.target.value)}
+                  placeholder="Shkruaj arsyen…"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-1)', fontSize: 13, boxSizing: 'border-box' }} />
               </div>
             )}
 
@@ -415,7 +440,7 @@ export default function POSHistoryClient({ company, sales }: Props) {
                 Anulo
               </button>
               <button
-                disabled={!!cancellingId}
+                disabled={!!cancellingId || ((confirmCancel as Sale & { _actionType: string })._actionType === 'CANCEL' && cancelReason.trim().length < 3)}
                 onClick={() => cancelSale(confirmCancel, (confirmCancel as Sale & { _actionType: string })._actionType as 'CANCEL' | 'RETURN')}
                 style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: (confirmCancel as Sale & { _actionType: string })._actionType === 'CANCEL' ? '#F59E0B' : '#EF4444', color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 {cancellingId

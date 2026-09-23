@@ -1,0 +1,265 @@
+// Orkestrimi i fiskalizimit: ndërtim → nënshkrim → hash chain → log → dërgim → ruajtje.
+// Përdoret nga /api/pos/fiscalize, /api/pos/cancel, /api/pos/sync-offline dhe cron.
+
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { calculate, CalcError, type CalcInput, type CalcItemInput, type CalcPaymentInput, type CalcResult, type Discount } from './calc'
+import { buildCoupon, type BuiltCoupon } from './coupon'
+import { GENESIS_HASH, OFFLINE_DEADLINE_HOURS, isPaymentKind, isTaxRate, type AtkEnvironment, type CouponType, type PaymentKind } from './constants'
+import { computeLink } from './hash-chain'
+import { decryptPrivateKey } from './keys'
+import { atkUnixTime, submitPosCoupon, type SubmitResult } from './transport'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DB = SupabaseClient<any, any, any>
+
+export { CalcError }
+
+// ── Konteksti: kompania + pajisja ─────────────────────────────────
+
+export interface FiscalContext {
+  companyId: string
+  nui: number
+  vatRegistered: boolean
+  location: string
+  device: {
+    id: string; posId: number; branchId: number; applicationId: number
+    environment: AtkEnvironment; clockOffsetMs: number; privateKeyPem: string
+  }
+}
+
+export class FiscalError extends Error {
+  constructor(message: string, public readonly status = 422) { super(message); this.name = 'FiscalError' }
+}
+
+export async function loadFiscalContext(db: DB, companyId: string): Promise<FiscalContext> {
+  const { data: company } = await db.from('companies')
+    .select('id, nui, location_city, pos_enabled, is_vat_registered, branch_id')
+    .eq('id', companyId).single()
+  if (!company) throw new FiscalError('Kompania nuk u gjet', 404)
+  if (!company.pos_enabled) throw new FiscalError('POS nuk është aktivizuar për këtë kompani', 403)
+
+  const nui = Number(String(company.nui ?? '').replace(/\D/g, ''))
+  if (!nui) throw new FiscalError('NUI mungon — shtoje te Cilësimet → Kompania')
+
+  const { data: device } = await db.from('pos_devices')
+    .select('id, pos_id, branch_id, application_id, environment, status, private_key_enc, clock_offset_ms')
+    .eq('company_id', companyId).in('status', ['active', 'onboarded'])
+    .not('private_key_enc', 'is', null)
+    .order('created_at', { ascending: true }).limit(1).maybeSingle()
+  if (!device) throw new FiscalError('Nuk ka pajisje POS të regjistruar në ATK (onboarding)')
+  if (!device.application_id) throw new FiscalError('ApplicationId i pajisjes mungon')
+
+  return {
+    companyId, nui,
+    vatRegistered: company.is_vat_registered !== false,
+    location: company.location_city || 'Kosovë',
+    device: {
+      id: device.id,
+      posId: Number(device.pos_id),
+      branchId: Number(device.branch_id ?? company.branch_id ?? 1),
+      applicationId: Number(device.application_id),
+      environment: device.environment === 'PROD' ? 'PROD' : 'TEST',
+      clockOffsetMs: Number(device.clock_offset_ms ?? 0),
+      privateKeyPem: decryptPrivateKey(device.private_key_enc),
+    },
+  }
+}
+
+// ── Normalizimi i kërkesës nga klientët ekzistues ────────────────
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export function parseDiscount(raw: any, legacyPercent?: unknown): Discount | null {
+  if (raw && typeof raw === 'object' && (raw.kind === 'percent' || raw.kind === 'amount')) {
+    const value = Number(raw.value)
+    return Number.isFinite(value) && value > 0 ? { kind: raw.kind, value } : null
+  }
+  const p = Number(legacyPercent)
+  return Number.isFinite(p) && p > 0 ? { kind: 'percent', value: p } : null
+}
+
+export function parseSaleItems(items: any[]): CalcItemInput[] {
+  if (!Array.isArray(items) || !items.length) throw new CalcError('Shporta është bosh')
+  return items.map((i, idx) => {
+    const taxRate = i.taxRate ?? i.tax_rate ?? 'E'
+    if (!isTaxRate(taxRate)) throw new CalcError(`Norma e TVSH-së e pavlefshme te artikulli ${idx + 1}`)
+    const unitPrice = Math.round(Number(i.customPrice ?? i.price))
+    return {
+      name: String(i.name ?? ''),
+      unit: String(i.unit ?? 'cope'),
+      unitPrice,
+      quantity: Number(i.quantity),
+      taxRate,
+      discount: parseDiscount(i.itemDiscount ?? (i.discountType ? { kind: i.discountType, value: i.discountValue } : null), i.discount),
+      productId: typeof i.productId === 'string' && /^[0-9a-f-]{36}$/i.test(i.productId) ? i.productId : null,
+    }
+  })
+}
+
+const LEGACY_METHOD: Record<string, PaymentKind> = { cash: 'cash', card: 'card', voucher: 'voucher', insurance: 'other', other: 'other', cheque: 'cheque' }
+
+/** payments[] | splitPayment{cash,card} | paymentMethod (+ tendered) */
+export function parsePayments(body: any): CalcPaymentInput[] | { method: PaymentKind; tendered?: number } {
+  if (Array.isArray(body.payments) && body.payments.length) {
+    return body.payments.map((p: any) => {
+      if (!isPaymentKind(p.type)) throw new CalcError(`Mënyrë pagese e panjohur: ${p.type}`)
+      return { type: p.type, amount: Math.round(Number(p.amount)) }
+    })
+  }
+  if (body.splitPayment && (body.splitPayment.cash || body.splitPayment.card)) {
+    return [
+      { type: 'cash' as const, amount: Math.round(Number(body.splitPayment.cash) || 0) },
+      { type: 'card' as const, amount: Math.round(Number(body.splitPayment.card) || 0) },
+    ]
+  }
+  const method = LEGACY_METHOD[body.paymentMethod] ?? 'cash'
+  const tendered = Number(body.tendered)
+  return { method, tendered: Number.isFinite(tendered) && tendered > 0 ? Math.round(tendered) : undefined }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** Llogarit; nëse klienti dha vetëm mënyrën e pagesës, shuma = totali (ose tendered për cash) */
+export function calculateSale(args: {
+  items: CalcItemInput[]; vatRegistered: boolean; saleDiscount: Discount | null
+  payments: ReturnType<typeof parsePayments>
+}): CalcResult {
+  const base: Omit<CalcInput, 'payments'> = { items: args.items, vatRegistered: args.vatRegistered, saleDiscount: args.saleDiscount }
+  if (Array.isArray(args.payments)) return calculate({ ...base, payments: args.payments })
+  const probe = calculate({ ...base, payments: [{ type: 'cash', amount: Number.MAX_SAFE_INTEGER }] })
+  const { method, tendered } = args.payments
+  const amount = method === 'cash' && tendered ? tendered : probe.total
+  return calculate({ ...base, payments: [{ type: method, amount }] })
+}
+
+// ── Numri i kuponit (atomik, pa përsëritje) ──────────────────────
+
+export async function nextCouponId(db: DB, companyId: string): Promise<number> {
+  const { data, error } = await db.rpc('atk_next_coupon_id', { p_company_id: companyId })
+  if (error || !data) throw new FiscalError(`Numri i kuponit nuk u gjenerua: ${error?.message ?? 'bosh'}`, 500)
+  return Number(data)
+}
+
+/** Numri ditor i kuponit për pajisje ("KUPON FISKAL DITOR NR."), rifillon çdo ditë (ora e Kosovës) */
+export async function nextDailyNo(db: DB, deviceId: string, day: string): Promise<number> {
+  const { data, error } = await db.rpc('atk_next_daily_no', { p_device_id: deviceId, p_day: day })
+  if (error || !data) throw new FiscalError(`Numri ditor nuk u gjenerua: ${error?.message ?? 'bosh'}`, 500)
+  return Number(data)
+}
+
+// ── Kuponi: ndërto + zinxhir + dërgo ──────────────────────────────
+
+export interface IssueResult {
+  coupon: BuiltCoupon
+  logId: string
+  status: 'fiscalized' | 'offline' | 'failed'
+  transactionId: string | null
+  error: string | null
+  chain: { previousHash: string; currentHash: string; integrityCheck: string }
+}
+
+export async function issueCoupon(db: DB, ctx: FiscalContext, args: {
+  saleId: string; couponId: number; type: CouponType; referenceNo: number
+  calc: CalcResult; operator: string; time?: number
+}): Promise<IssueResult> {
+  const time = args.time ?? atkUnixTime(ctx.device.clockOffsetMs)
+  const coupon = buildCoupon({
+    meta: { businessId: ctx.nui, branchId: ctx.device.branchId, posId: ctx.device.posId,
+      applicationId: ctx.device.applicationId, location: ctx.location, operatorId: args.operator || 'Operator' },
+    calc: args.calc, couponId: args.couponId, type: args.type, referenceNo: args.referenceNo,
+    time, privateKeyPem: ctx.device.privateKeyPem,
+  })
+
+  const { logId, chain } = await appendToChain(db, ctx, args.saleId, coupon)
+  const result = await submitPosCoupon(ctx.device.environment, coupon.posPayload, coupon.posSignature)
+  const status = await recordSubmission(db, ctx.device.id, logId, args.saleId, result, 1)
+
+  return { coupon, logId, status, transactionId: result.transactionId, error: result.error, chain }
+}
+
+async function appendToChain(db: DB, ctx: FiscalContext, saleId: string, c: BuiltCoupon) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: last } = await db.from('atk_logs')
+      .select('chain_seq, current_hash').eq('pos_device_id', ctx.device.id)
+      .order('chain_seq', { ascending: false }).limit(1).maybeSingle()
+
+    const previousHash = last?.current_hash ?? GENESIS_HASH
+    const chain = computeLink({ couponId: c.couponId, time: c.time, previousHash, payloadBase64: c.posPayload, signature: c.posSignature })
+
+    const { data, error } = await db.from('atk_logs').insert({
+      company_id: ctx.companyId, pos_device_id: ctx.device.id, sale_id: saleId,
+      chain_seq: (last?.chain_seq ?? 0) + 1,
+      coupon_id: c.couponId, coupon_type: c.type, reference_no: c.referenceNo, coupon_time: c.time,
+      verification_no: c.verificationNo, environment: ctx.device.environment,
+      payload_base64: c.posPayload, signature: c.posSignature, qr_code: c.qrCode,
+      previous_hash: chain.previousHash, current_hash: chain.currentHash, integrity_check: chain.integrityCheck,
+      clock_offset_ms: Math.round(ctx.device.clockOffsetMs),
+      status: 'pending',
+      deadline_at: new Date(c.time * 1000 + OFFLINE_DEADLINE_HOURS * 3_600_000).toISOString(),
+    }).select('id').single()
+
+    if (!error && data) return { logId: data.id as string, chain }
+    if (error?.code !== '23505') throw new FiscalError(`Log-u ATK nuk u ruajt: ${error?.message}`, 500)
+    // 23505 → një kupon tjetër u fut njëkohësisht në zinxhir; rilexo dhe provo prapë
+  }
+  throw new FiscalError('Hash chain: konflikt i përsëritur, provo sërish', 503)
+}
+
+/** Ruaj përgjigjen e ATK në log + shitje. Kthen statusin e shitjes. */
+export async function recordSubmission(db: DB, deviceId: string, logId: string, saleId: string | null, r: SubmitResult, attempts: number) {
+  const now = new Date().toISOString()
+  const logStatus = r.outcome === 'accepted' ? 'accepted' : r.outcome === 'rejected' ? 'rejected' : 'offline'
+  const saleStatus = r.outcome === 'accepted' ? 'fiscalized' : r.outcome === 'rejected' ? 'failed' : 'offline'
+
+  await db.from('atk_logs').update({
+    status: logStatus, attempts, http_status: r.httpStatus, response_body: r.responseBody,
+    transaction_id: r.transactionId, error: r.error, last_attempt_at: now, duration_ms: r.durationMs,
+    accepted_at: r.outcome === 'accepted' ? now : null,
+  }).eq('id', logId)
+
+  if (saleId) {
+    await db.from('sales').update({
+      status: saleStatus,
+      atk_transaction_id: r.transactionId,
+      atk_error: r.outcome === 'accepted' ? null : r.error,
+      fiscalized_at: r.outcome === 'accepted' ? now : null,
+    }).eq('id', saleId)
+  }
+
+  // Sinkronizim pasiv i orës nga çdo përgjigje e ATK
+  if (r.serverTime) {
+    const offset = r.serverTime + 500 - (Date.now() - r.durationMs / 2)
+    await db.from('pos_devices').update({ clock_offset_ms: Math.round(offset), clock_synced_at: now }).eq('id', deviceId)
+  }
+  return saleStatus as 'fiscalized' | 'offline' | 'failed'
+}
+
+// ── Radha offline: ridërgo kuponët e nënshkruar, në rendin e zinxhirit ──
+
+export interface SyncSummary { attempted: number; accepted: number; rejected: number; stillOffline: number; late: number }
+
+export async function syncPending(db: DB, filter: { companyId?: string; limit?: number } = {}): Promise<SyncSummary> {
+  let q = db.from('atk_logs')
+    .select('id, pos_device_id, sale_id, environment, payload_base64, signature, attempts, deadline_at')
+    .in('status', ['pending', 'offline'])
+    .order('pos_device_id').order('chain_seq', { ascending: true })
+    .limit(filter.limit ?? 100)
+  if (filter.companyId) q = q.eq('company_id', filter.companyId)
+  const { data: rows, error } = await q
+  if (error) throw new FiscalError(error.message, 500)
+
+  const summary: SyncSummary = { attempted: 0, accepted: 0, rejected: 0, stillOffline: 0, late: 0 }
+  const blockedDevices = new Set<string>()
+
+  for (const row of rows ?? []) {
+    if (blockedDevices.has(row.pos_device_id)) { summary.stillOffline++; continue }
+    summary.attempted++
+    if (new Date(row.deadline_at) < new Date()) summary.late++
+
+    const r = await submitPosCoupon(row.environment, row.payload_base64, row.signature)
+    await recordSubmission(db, row.pos_device_id, row.id, row.sale_id, r, (row.attempts ?? 0) + 1)
+
+    if (r.outcome === 'accepted') summary.accepted++
+    else if (r.outcome === 'rejected') summary.rejected++
+    else { summary.stillOffline++; blockedDevices.add(row.pos_device_id) } // ruaj rendin: mos kalo përpara
+  }
+  return summary
+}

@@ -16,7 +16,7 @@ const PRICE_SCALE = 10_000
 const TAX_RATES = ['A', 'C', 'D', 'E'] as const
 
 const PRODUCT_COLUMNS =
-  'id, company_id, name, price, category, emoji, tax_rate, unit, stock, barcode, is_active, image_url, buy_price, discount, sort_order, created_at, updated_at'
+  'id, company_id, name, price, category, atk_category, emoji, tax_rate, unit, stock, barcode, is_active, image_url, buy_price, discount, sort_order, created_at, updated_at'
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>
 
@@ -34,6 +34,7 @@ interface ProductPayload {
   discount?: number | string | null
   is_active?: boolean
   image_url?: string | null
+  atk_category?: string | null
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -127,6 +128,11 @@ function buildRow(body: ProductPayload, partial: boolean): Record<string, unknow
   if (has('emoji')) row.emoji = cleanText(body.emoji) ?? '#9B5CF8'
   if (has('image_url')) row.image_url = cleanText(body.image_url)
   if (has('is_active')) row.is_active = Boolean(body.is_active)
+  if (has('atk_category')) {
+    const c = cleanText(body.atk_category)?.toUpperCase() ?? 'TT'
+    if (!/^[A-Z]{2,4}$/.test(c)) return 'Kategoria ATK duhet të jetë kod 2–4 shkronja (p.sh. TT, AU, UR)'
+    row.atk_category = c
+  }
 
   return row
 }

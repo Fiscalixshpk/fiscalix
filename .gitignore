@@ -25,3 +25,9 @@ yarn-error.log*
 .DS_Store
 *.pem
 .vercel
+
+# ATK — raporte testimi dhe çelësa lokalë
+atk-report.json
+atk-report.md
+atk-receipts/
+*.pem

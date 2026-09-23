@@ -88,6 +88,7 @@ export function buildATKReceipt(
   const unit = (i: PrintableItem) => i.unit || 'cope'
 
   return {
+    saleId:   fiscal.saleId,
     company: {
       name:       company.name,
       nui:        company.nui || '—',

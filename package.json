@@ -8,7 +8,9 @@
     "vercel-build": "next build",
     "start": "NODE_OPTIONS=--openssl-legacy-provider next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "atk:test": "tsx scripts/atk-certification.ts",
+    "atk:test:live": "tsx scripts/atk-certification.ts --live"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
@@ -52,7 +54,6 @@
     "openai": "^4.56.0",
     "papaparse": "^5.4.1",
     "postcss": "^8.4.41",
-    "protobufjs": "^7.4.0",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
@@ -78,6 +79,8 @@
     "@typescript-eslint/eslint-plugin": "^8.3.0",
     "@typescript-eslint/parser": "^8.3.0",
     "eslint": "^8.57.0",
-    "eslint-config-next": "^15.0.0"
+    "eslint-config-next": "^15.0.0",
+    "protobufjs": "^7.6.6",
+    "tsx": "^4.23.15"
   }
 }

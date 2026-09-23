@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase/server'
 import * as forge                    from 'node-forge'
+import { encryptPrivateKey }         from '@/lib/atk/keys'
 
 const ATK_CA = {
   TEST: 'https://fiskalizimi-test.atk-ks.org',
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
 
     // ── STEP 3: Dërgo te ATK CA ──────────────────────────────
     let certificatePem: string
+    let verificationCode: string | null = null
 
     const { data: companyFull } = await supabase
       .from('companies').select('name, nui, tax_number, atk_fiscalization_no').eq('id', userData.company_id).single()
@@ -122,7 +124,7 @@ export async function POST(req: NextRequest) {
       }
 
       const verifyData = await verifyRes.json()
-      const verificationCode = verifyData.verification_code
+      verificationCode = verifyData.verification_code ?? null
       businessName = verifyData.business_name || businessName
       
       console.log('ATK Verify OK:', { verificationCode, businessName })
@@ -170,7 +172,8 @@ export async function POST(req: NextRequest) {
       branch_id:         branchId,
       device_name:       deviceName,
       cashier_name:      cashierName || null,
-      private_key_enc:   privateKeyPem,
+      // Enkriptohet kur ATK_KEY_ENCRYPTION_SECRET është vendosur (decryptPrivateKey pranon të dyja format)
+      private_key_enc:   process.env.ATK_KEY_ENCRYPTION_SECRET ? encryptPrivateKey(privateKeyPem) : privateKeyPem,
       certificate_pem:   certificatePem,
       application_id:    applicationId || null,
       environment:       env,
