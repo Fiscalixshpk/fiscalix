@@ -5,6 +5,7 @@
 
 import { useState, useMemo } from 'react'
 import { toast } from 'sonner'
+import { fetchJson } from '@/lib/http'
 import {
   X, Plus, Pencil, Trash2, Package, Search,
   ChevronDown, ChevronUp, Check, AlertTriangle,
@@ -118,13 +119,11 @@ export default function ProductsDrawer({ companyId, businessType, products: init
         is_active: form.is_active,
         ...(editing ? { id: editing.id } : {}),
       }
-      const res  = await fetch('/api/pos/products', {
+      const data = await fetchJson<{ product: Product }>('/api/pos/products', {
         method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
       if (editing) {
         setProducts(prev => prev.map(p => p.id === editing.id ? data.product : p))
         toast.success('Produkti u përditësua')
@@ -142,12 +141,16 @@ export default function ProductsDrawer({ companyId, businessType, products: init
   async function deleteProduct(id: string) {
     setDeleting(id)
     try {
-      const res = await fetch(`/api/pos/products?id=${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error()
-      setProducts(prev => prev.filter(p => p.id !== id))
-      toast.success('Produkti u fshi')
+      const data = await fetchJson<{ deactivated?: boolean }>(`/api/pos/products?id=${id}`, { method: 'DELETE' })
+      if (data.deactivated) {
+        setProducts(prev => prev.map(p => p.id === id ? { ...p, is_active: false } : p))
+        toast.success('Produkti ka shitje — u çaktivizua në vend që të fshihet')
+      } else {
+        setProducts(prev => prev.filter(p => p.id !== id))
+        toast.success('Produkti u fshi')
+      }
       onRefresh()
-    } catch { toast.error('Gabim gjatë fshirjes') }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Gabim gjatë fshirjes') }
     finally { setDeleting(null) }
   }
 
@@ -155,16 +158,15 @@ export default function ProductsDrawer({ companyId, businessType, products: init
     const stock = parseInt(value)
     if (isNaN(stock) || stock < 0) return
     try {
-      const res = await fetch('/api/pos/products', {
+      await fetchJson('/api/pos/products', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: productId, stock }),
       })
-      if (!res.ok) throw new Error()
       setProducts(prev => prev.map(p => p.id === productId ? { ...p, stock } : p))
       setStockEdit(prev => { const n = { ...prev }; delete n[productId]; return n })
       toast.success('Stoku u përditësua')
       onRefresh()
-    } catch { toast.error('Gabim') }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Gabim') }
   }
 
   const S = {

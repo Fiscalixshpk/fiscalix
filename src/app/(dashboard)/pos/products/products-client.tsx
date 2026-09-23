@@ -5,6 +5,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { fetchJson, readJson } from '@/lib/http'
 import {
   Plus, Search, Pencil, Trash2, Package, Upload,
   X, Check, ArrowLeft, Camera, ToggleLeft, ToggleRight
@@ -55,24 +56,15 @@ export default function ProductsClient({ companyId, businessType, initialView = 
   const [uploading,  setUploading]  = useState(false)
   const [preview,    setPreview]    = useState<string | null>(null)
 
-  // Load products on mount
-  useState(() => {
-    fetch('/api/pos/products?includeInactive=true')
-      .then(r => r.json())
-      .then(d => { setProducts(d.products || []); setLoaded(true) })
-      .catch(() => setLoaded(true))
-  })
-
   // Load products and categories on mount
   useEffect(() => {
-    fetch('/api/pos/products?includeInactive=true')
-      .then(r => r.json())
-      .then(d => { setProducts(d.products || []); setLoaded(true) })
-      .catch(() => setLoaded(true))
+    fetchJson<{ products: Product[] }>('/api/pos/products?includeInactive=true')
+      .then(d => setProducts(d.products ?? []))
+      .catch(err => toast.error(err instanceof Error ? err.message : 'Produktet nuk u ngarkuan'))
+      .finally(() => setLoaded(true))
 
-    fetch('/api/pos/categories')
-      .then(r => r.json())
-      .then(d => setDbCats(d.categories || []))
+    fetchJson<{ categories: { id: string; name: string }[] }>('/api/pos/categories')
+      .then(d => setDbCats(d.categories ?? []))
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -103,9 +95,7 @@ export default function ProductsClient({ companyId, businessType, initialView = 
     setUploading(true)
     try {
       const fd = new FormData(); fd.append('file', file)
-      const res  = await fetch('/api/pos/upload-image', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      const data = await fetchJson<{ url: string }>('/api/pos/upload-image', { method: 'POST', body: fd })
       setForm(f => ({ ...f, image_url: data.url }))
       setPreview(data.url)
     } catch (err) {
@@ -123,9 +113,7 @@ export default function ProductsClient({ companyId, businessType, initialView = 
     setSaving(true)
     try {
       const body = { name:form.name.trim(), priceEUR:price, buyPriceEUR:form.buyPriceEUR?parseFloat(form.buyPriceEUR):null, category:form.category.trim()||null, emoji:form.emoji, tax_rate:form.tax_rate, unit:form.unit, stock:form.stock!==''?parseInt(form.stock):null, barcode:form.barcode.trim()||null, discount:form.discount!==''?parseFloat(form.discount):0, is_active:form.is_active, image_url:form.image_url||null, ...(editing?{id:editing.id}:{}) }
-      const res  = await fetch('/api/pos/products', { method:editing?'PUT':'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
+      const data = await fetchJson<{ product: Product }>('/api/pos/products', { method:editing?'PUT':'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
       if (editing) setProducts(p => p.map(x => x.id===editing.id?data.product:x))
       else         setProducts(p => [...p, data.product])
       toast.success(editing?'Produkti u përditësua':'Produkti u shtua')
@@ -137,10 +125,16 @@ export default function ProductsClient({ companyId, businessType, initialView = 
   async function del(id: string) {
     setDeleting(id)
     try {
-      await fetch(`/api/pos/products?id=${id}`, { method:'DELETE' })
-      setProducts(p => p.filter(x => x.id!==id))
-      toast.success('Produkti u fshi')
-    } finally { setDeleting(null) }
+      const data = await fetchJson<{ deactivated?: boolean }>(`/api/pos/products?id=${id}`, { method:'DELETE' })
+      if (data.deactivated) {
+        setProducts(p => p.map(x => x.id===id ? { ...x, is_active:false } : x))
+        toast.success('Produkti ka shitje — u çaktivizua në vend që të fshihet')
+      } else {
+        setProducts(p => p.filter(x => x.id!==id))
+        toast.success('Produkti u fshi')
+      }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Gabim gjatë fshirjes') }
+    finally { setDeleting(null) }
   }
 
   const S = {
@@ -385,7 +379,7 @@ export default function ProductsClient({ companyId, businessType, initialView = 
                         method:'POST', headers:{'Content-Type':'application/json'},
                         body:JSON.stringify({ name:newCat.trim() })
                       })
-                      const d=await res.json()
+                      const d=(await readJson<{ category?: { id: string; name: string }; error?: string }>(res)) ?? {}
                       if(res.ok && d.category){ setDbCats(p=>[...p,d.category]); setNewCat(''); toast.success('Kategoria u shtua') }
                       else { toast.error(d.error || 'Gabim') }
                     } catch(e){ toast.error('Gabim lidhje') }
@@ -405,7 +399,7 @@ export default function ProductsClient({ companyId, businessType, initialView = 
                       method:'POST', headers:{'Content-Type':'application/json'},
                       body:JSON.stringify({ name:newCat.trim() })
                     })
-                    const d=await res.json()
+                    const d=(await readJson<{ category?: { id: string; name: string }; error?: string }>(res)) ?? {}
                     if(res.ok && d.category){ setDbCats(p=>[...p,d.category]); setNewCat(''); toast.success('Kategoria u shtua') }
                     else { toast.error(d.error || 'Gabim') }
                   } catch(e){ toast.error('Gabim lidhje') }
