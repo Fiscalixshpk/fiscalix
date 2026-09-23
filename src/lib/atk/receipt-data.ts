@@ -55,7 +55,7 @@ export async function loadReceiptInput(db: DB, saleId: string, opts: { companyId
   const [{ data: items }, { data: company }, { data: device }] = await Promise.all([
     db.from('sale_items').select(ITEM_COLS).eq('sale_id', sale.id),
     db.from('companies').select('name, nui, vat_number, vat_number_atk, is_vat_registered, logo_url, address, city, location_city, phone, receipt_footer').eq('id', sale.company_id).single(),
-    db.from('pos_devices').select('pos_id, environment, device_name, unit_number, unit_name, unit_address, unit_city, unit_phone').eq('id', sale.pos_device_id).maybeSingle(),
+    db.from('pos_devices').select('pos_id, branch_id, environment, device_name, unit_number, unit_name, unit_address, unit_city, unit_phone').eq('id', sale.pos_device_id).maybeSingle(),
   ])
   if (!company) throw new ReceiptError('Kompania nuk u gjet')
 
@@ -92,11 +92,12 @@ export async function loadReceiptInput(db: DB, saleId: string, opts: { companyId
       freeText: company.receipt_footer || null,
     },
     unit: {
-      name: device?.unit_name || device?.device_name || 'Njësia 1',
+      name: device?.unit_name || company.name,
       address: device?.unit_address || company.address || '—',
       city: device?.unit_city || company.location_city || company.city || 'Kosovë',
       phone: device?.unit_phone || company.phone || null,
-      number: device?.unit_number || '0',
+      // Numri i njësisë = BranchId i regjistrimit te ATK, kur s'është vendosur ndryshe
+      number: device?.unit_number || String(device?.branch_id ?? 1),
     },
     posId: Number(device?.pos_id ?? 1),
     environment: device?.environment === 'PROD' ? 'PROD' : 'TEST',

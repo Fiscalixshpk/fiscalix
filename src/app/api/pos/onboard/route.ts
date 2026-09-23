@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase/server'
 import * as forge                    from 'node-forge'
 import { encryptPrivateKey }         from '@/lib/atk/keys'
+import { createCsrPem }              from '@/lib/atk/csr'
 
 const ATK_CA = {
   TEST: 'https://fiskalizimi-test.atk-ks.org',
@@ -60,26 +61,15 @@ export async function POST(req: NextRequest) {
     const privateKeyPem = ecPrivKey as string
     const publicKeyPem  = ecPubKey as string
 
-    // ── STEP 2: Krijon CSR ECDSA P-256 me openssl ──────────────
+    // ── STEP 2: Krijon CSR ECDSA P-256 (pa openssl të serverit) ──
     let businessName = company?.name || ''
-    const csrPem = await (async () => {
-      const { execSync } = require('child_process')
-      const fs = require('fs')
-      const os = require('os')
-      const tmpDir = os.tmpdir()
-      const tmpKey = `${tmpDir}/atk-key-${Date.now()}.pem`
-      const tmpCsr = `${tmpDir}/atk-csr-${Date.now()}.csr`
-      try {
-        fs.writeFileSync(tmpKey, privateKeyPem, { mode: 0o600 })
-        const subj = `/C=XK/O=${nui}/OU=${posId}/L=${branchId}/CN=${posId}`
-        execSync(`openssl req -new -key "${tmpKey}" -out "${tmpCsr}" -subj "${subj}" -sha256`)
-        const result = fs.readFileSync(tmpCsr, 'utf8')
-        return result.trim()
-      } finally {
-        try { fs.unlinkSync(tmpKey) } catch {}
-        try { fs.unlinkSync(tmpCsr) } catch {}
-      }
-    })()
+    const csrPem = createCsrPem(privateKeyPem, [
+      { type: 'C',  value: 'XK' },
+      { type: 'O',  value: String(nui) },
+      { type: 'OU', value: String(posId) },
+      { type: 'L',  value: String(branchId) },
+      { type: 'CN', value: String(posId) },
+    ])
 
     // ── STEP 3: Dërgo te ATK CA ──────────────────────────────
     let certificatePem: string
