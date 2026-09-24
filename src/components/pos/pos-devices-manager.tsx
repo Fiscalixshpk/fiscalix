@@ -54,7 +54,7 @@ export default function POSDevicesManager({ companyId, companyNui, companyName, 
 
   function openEdit(d: Device) {
     setEditingId(d.id)
-    setForm({ device_name: d.device_name, cashier_name: d.cashier_name || '', environment: d.environment as 'TEST' | 'PROD' })
+    setForm({ device_name: d.device_name, cashier_name: d.cashier_name || '', environment: env === 'PROD' ? d.environment as 'TEST' | 'PROD' : 'TEST' })
     setShowAdd(true)
   }
 
@@ -147,7 +147,7 @@ export default function POSDevicesManager({ companyId, companyNui, companyName, 
           <div style={{ marginBottom: 12 }}>
             <label style={S.label}>Environment</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              {(['TEST', 'PROD'] as const).map(e => (
+              {(env === 'PROD' ? (['TEST', 'PROD'] as const) : (['TEST'] as const)).map(e => (
                 <button key={e} onClick={() => setForm(f => ({ ...f, environment: e }))}
                   style={{ padding: '6px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700,
                     background: form.environment === e ? (e === 'PROD' ? '#EF4444' : 'var(--purple)') : 'var(--bg-muted)',

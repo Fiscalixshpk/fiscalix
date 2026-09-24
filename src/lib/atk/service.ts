@@ -27,6 +27,14 @@ export interface FiscalContext {
   }
 }
 
+/**
+ * Mjedisi efektiv i ATK: PROD vetëm kur serveri e lejon (ATK_ENVIRONMENT=PROD pas certifikimit).
+ * Deri atëherë çdo kupon shkon te TEST, edhe nëse pajisja është shënuar gabimisht PROD.
+ */
+export function effectiveEnvironment(deviceEnv: string | null | undefined): AtkEnvironment {
+  return process.env.ATK_ENVIRONMENT === 'PROD' && deviceEnv === 'PROD' ? 'PROD' : 'TEST'
+}
+
 export class FiscalError extends Error {
   constructor(message: string, public readonly status = 422) { super(message); this.name = 'FiscalError' }
 }
@@ -58,7 +66,7 @@ export async function loadFiscalContext(db: DB, companyId: string): Promise<Fisc
       posId: Number(device.pos_id),
       branchId: Number(device.branch_id ?? company.branch_id ?? 1),
       applicationId: Number(device.application_id),
-      environment: device.environment === 'PROD' ? 'PROD' : 'TEST',
+      environment: effectiveEnvironment(device.environment),
       clockOffsetMs: Number(device.clock_offset_ms ?? 0),
       privateKeyPem: decryptPrivateKey(device.private_key_enc),
     },
@@ -254,7 +262,7 @@ export async function syncPending(db: DB, filter: { companyId?: string; limit?: 
     summary.attempted++
     if (new Date(row.deadline_at) < new Date()) summary.late++
 
-    const r = await submitPosCoupon(row.environment, row.payload_base64, row.signature)
+    const r = await submitPosCoupon(effectiveEnvironment(row.environment), row.payload_base64, row.signature)
     await recordSubmission(db, row.pos_device_id, row.id, row.sale_id, r, (row.attempts ?? 0) + 1)
 
     if (r.outcome === 'accepted') summary.accepted++
