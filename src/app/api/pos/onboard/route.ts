@@ -47,7 +47,10 @@ export async function POST(req: NextRequest) {
     }, { status: 422 })
   }
 
-  const env = ((environment || process.env.ATK_ENVIRONMENT || 'TEST') as 'TEST' | 'PROD')
+  // Mjedisi vendoset VETËM nga serveri. PROD aktivizohet pas certifikimit me ATK_ENVIRONMENT=PROD te Vercel.
+  // (Faqja dërgonte "PROD" si default → onboarding-u shkonte te serveri real dhe ATK kthente 404.)
+  void environment
+  const env: 'TEST' | 'PROD' = process.env.ATK_ENVIRONMENT === 'PROD' ? 'PROD' : 'TEST'
   const baseUrl = ATK_CA[env]
 
   try {
@@ -61,15 +64,7 @@ export async function POST(req: NextRequest) {
     const privateKeyPem = ecPrivKey as string
     const publicKeyPem  = ecPubKey as string
 
-    // ── STEP 2: Krijon CSR ECDSA P-256 (pa openssl të serverit) ──
     let businessName = company?.name || ''
-    const csrPem = createCsrPem(privateKeyPem, [
-      { type: 'C',  value: 'XK' },
-      { type: 'O',  value: String(nui) },
-      { type: 'OU', value: String(posId) },
-      { type: 'L',  value: String(branchId) },
-      { type: 'CN', value: String(posId) },
-    ])
 
     // ── STEP 3: Dërgo te ATK CA ──────────────────────────────
     let certificatePem: string
@@ -119,7 +114,14 @@ export async function POST(req: NextRequest) {
       
       console.log('ATK Verify OK:', { verificationCode, businessName })
 
-      // csrPem u gjenerua tashmë me openssl — e përdorim direkt
+      // CSR sipas readme zyrtar ATK: C, O=NUI, OU=PosId, L=BranchId, CN=emri i biznesit (nga /ca/verify)
+      const csrPem = createCsrPem(privateKeyPem, [
+        { type: 'C',  value: 'XK' },
+        { type: 'O',  value: String(nui) },
+        { type: 'OU', value: String(posId) },
+        { type: 'L',  value: String(branchId) },
+        { type: 'CN', value: String(posId) }, // i njëjtë me onboarding-un që funksionoi te ATK TEST
+      ])
       const caRes = await fetch(`${baseUrl}/ca/signcsr`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },

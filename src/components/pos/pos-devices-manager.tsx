@@ -37,10 +37,10 @@ export default function POSDevicesManager({ companyId, companyNui, companyName, 
   const [form, setForm] = useState({
     device_name:  '',
     cashier_name: '',
-    environment:  'PROD' as 'TEST' | 'PROD',
+    environment:  'TEST' as 'TEST' | 'PROD',
   })
 
-  const env = (process.env.NEXT_PUBLIC_ATK_ENVIRONMENT as 'TEST' | 'PROD') || 'PROD'
+  const env: 'TEST' | 'PROD' = process.env.NEXT_PUBLIC_ATK_ENVIRONMENT === 'PROD' ? 'PROD' : 'TEST'
 
   const S = {
     label: { fontSize: 10, fontWeight: 700 as const, color: 'var(--text-3)', display: 'block', marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: '0.05em' },
@@ -48,7 +48,7 @@ export default function POSDevicesManager({ companyId, companyNui, companyName, 
 
   function openAdd() {
     setEditingId(null)
-    setForm({ device_name: `Arka ${devices.length + 1}`, cashier_name: '', environment: 'PROD' })
+    setForm({ device_name: `Arka ${devices.length + 1}`, cashier_name: '', environment: env })
     setShowAdd(true)
   }
 
