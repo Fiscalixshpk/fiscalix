@@ -14,6 +14,12 @@ import {
 import QRCanvas from '@/components/pos/qr-canvas'
 import { buildATKReceipt } from '@/hooks/usePrintReceipt'
 import { printReceipt } from '@/components/pos/receipt-printer'
+import { calculate, type CalcResult, type Discount } from '@/lib/atk/calc'
+import { getPaperWidth } from '@/lib/atk/print-client'
+import {
+  acknowledgeOnlineSale, createOfflineSale, isNetworkError, numbersForOnlineSale,
+  pendingCoupons, printOfflineReceipt, refreshKit, syncPending, type OfflineSaleResult,
+} from '@/lib/atk/offline/engine'
 
 // ── Types ──────────────────────────────────────────────────────────────
 interface Product {
@@ -22,10 +28,13 @@ interface Product {
   unit: string; stock: number | null; barcode?: string | null
   expiry_date?: string | null; image_url?: string | null
   discount?: number | null
+  is_active?: boolean
 }
 interface CartItem {
   productId: string; name: string; price: number
   unit: string; quantity: number; taxRate: string; discount?: number
+  /** Zbritja e artikullit: % ose vlerë në cent (ka përparësi mbi `discount` %) */
+  disc?: Discount | null
 }
 interface Device {
   id: string; posId: number; name: string; cashierName: string; environment: 'TEST'|'PROD'
@@ -51,16 +60,25 @@ interface Props {
 const fmtEUR = (atk: number) => `€${(atk/10000).toFixed(2)}`
 const TAX: Record<string,number> = { A:0, C:0, D:0.08, E:0.18 }
 
-function calcTotals(items: CartItem[]) {
-  let total=0, tax=0
-  for (const it of items) {
-    const rate = TAX[it.taxRate]??0.18
-    const disc = it.discount??0
-    const eur  = (it.price * it.quantity * (1-disc/100)) / 10000
-    total += eur; tax += eur - eur/(1+rate)
+const itemDiscount = (it: CartItem): Discount | null =>
+  it.disc && it.disc.value > 0 ? it.disc : (it.discount ? { kind: 'percent', value: it.discount } : null)
+
+/** Totalet me të njëjtin motor si serveri — ajo që sheh arkëtari = ajo që del në kupon */
+function calcTotals(items: CartItem[], saleDiscount: Discount | null): { total: number; tax: number; calc: CalcResult | null; error?: string } {
+  if (!items.length) return { total: 0, tax: 0, calc: null }
+  try {
+    const calc = calculate({
+      vatRegistered: true, saleDiscount,
+      payments: [{ type: 'cash', amount: Number.MAX_SAFE_INTEGER }],
+      items: items.map(it => ({ name: it.name, unit: it.unit || 'cope', unitPrice: Math.round(it.price), quantity: it.quantity,
+        taxRate: (['A','C','D','E'].includes(it.taxRate) ? it.taxRate : 'E') as 'A'|'C'|'D'|'E', discount: itemDiscount(it) })),
+    })
+    return { total: calc.total / 100, tax: calc.totalTax / 100, calc }
+  } catch (e) {
+    return { total: 0, tax: 0, calc: null, error: e instanceof Error ? e.message : 'Gabim' }
   }
-  return { total: Math.round(total*100)/100, tax: Math.round(tax*100)/100 }
 }
+void TAX
 
 const C = {
   bg:'#F4F2FF', card:'#FFFFFF', border:'#E2DCFF',
@@ -390,7 +408,14 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
   const [cart, setCart] = useState<CartItem[]>([])
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
-  const [payMethod, setPayMethod] = useState<'cash'|'card'|'debt'>('cash')
+  const [payMethod, setPayMethod] = useState<'cash'|'card'|'split'|'debt'>('cash')
+  const [splitCash, setSplitCash] = useState('')
+  const [saleDiscount, setSaleDiscount] = useState<Discount | null>(null)
+  const [showSaleDiscount, setShowSaleDiscount] = useState(false)
+  const [discKind, setDiscKind] = useState<'percent'|'amount'>('percent')
+  const [discInput, setDiscInput] = useState('')
+  const [online, setOnline] = useState(true)
+  const [pending, setPending] = useState(0)
   const [paying, setPaying] = useState(false)
   const [receipt, setReceipt] = useState<any>(null)
   const [savedCart, setSavedCart] = useState<any[]>([])
@@ -461,7 +486,28 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
     )
   }, [products, category, search])
 
-  const totals = useMemo(() => calcTotals(cart), [cart])
+  const totals = useMemo(() => calcTotals(cart, saleDiscount), [cart, saleDiscount])
+
+  // ── Offline: kit-i, gjendja e rrjetit, sinkronizimi automatik ──
+  const refreshPending = useCallback(async () => {
+    try { setPending((await pendingCoupons()).length) } catch { /* IndexedDB i padisponueshëm */ }
+  }, [])
+  const goOnlineTasks = useCallback(async () => {
+    try { await refreshKit() } catch { /* provohet më vonë */ }
+    const r = await syncPending()
+    await refreshPending()
+    if (r.sent > 0) toast.success(`${r.sent} kupon${r.sent === 1 ? '' : 'ë'} offline u dërguan te ATK`)
+    if (r.failed > 0) toast.error(`${r.failed} kupon${r.failed === 1 ? '' : 'ë'} offline nuk u pranuan — shiko Historinë`)
+  }, [refreshPending])
+  useEffect(() => {
+    const on = () => { setOnline(true); goOnlineTasks() }
+    const off = () => setOnline(false)
+    setOnline(navigator.onLine)
+    if (navigator.onLine) goOnlineTasks(); else refreshPending()
+    window.addEventListener('online', on); window.addEventListener('offline', off)
+    const t = setInterval(() => { if (navigator.onLine) goOnlineTasks() }, 60_000)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); clearInterval(t) }
+  }, [goOnlineTasks, refreshPending])
 
   function addItem(p: Product, qty?: number) {
     // Produktet me kg — hap modal
@@ -490,36 +536,85 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
     setCart(prev => prev.map(i=>i.productId===id?{...i,quantity:Math.max(0,i.quantity+d)}:i).filter(i=>i.quantity>0))
   }
   function setDiscount(id: string, disc: number) {
-    setCart(prev=>prev.map(i=>i.productId===id?{...i,discount:disc}:i))
+    setCart(prev=>prev.map(i=>i.productId===id?{...i,discount:0,disc:disc>0?{kind:'percent',value:disc}:null}:i))
     setShowDiscount(null)
+  }
+  function applyCustomDiscount(target: string | 'sale') {
+    const v = parseFloat(discInput.replace(',', '.'))
+    if (!Number.isFinite(v) || v < 0) { toast.error('Vlerë e pavlefshme'); return }
+    if (discKind === 'percent' && v > 100) { toast.error('Zbritja në % duhet të jetë 0–100'); return }
+    const d: Discount | null = v === 0 ? null : discKind === 'percent' ? { kind: 'percent', value: v } : { kind: 'amount', value: Math.round(v * 100) }
+    if (target === 'sale') { setSaleDiscount(d); setShowSaleDiscount(false) }
+    else { setCart(prev => prev.map(i => i.productId === target ? { ...i, discount: 0, disc: d } : i)); setShowDiscount(null) }
+    setDiscInput('')
   }
 
   async function checkout() {
     if (cart.length===0) return
+    if (totals.error) { toast.error(totals.error); return }
+    const totalCents = Math.round(totals.total * 100)
     setPaying(true)
     try {
       const items = cart.map(i=>({
-        productId: i.productId, name: i.name,
-        quantity: i.quantity, price: i.price,
-        taxRate: i.taxRate, discount: i.discount||0,
-        total: Math.round(i.price*i.quantity*(1-(i.discount||0)/100))
+        productId: i.productId, name: i.name, unit: i.unit,
+        quantity: i.quantity, price: i.price, taxRate: i.taxRate,
+        itemDiscount: itemDiscount(i),
       }))
-      const body = {
-        companyId: company.id, userId,
-        deviceId: dev?.id, posId: dev?.posId,
-        isMockMode, paymentMethod: payMethod,
-        debtClientId: debtClient?.id,
-        debtClientName: debtClient?.name,
-        items
+      // Pagesa: cash (me kusur), kartelë, e kombinuar cash + kartelë
+      let payments: { type: 'cash'|'card'; amount: number }[] | undefined
+      if (payMethod === 'split') {
+        const cashPart = Math.round((parseFloat(splitCash.replace(',', '.')) || 0) * 100)
+        if (cashPart <= 0 || cashPart >= totalCents) { toast.error('Shëno sa paguhet cash (më pak se totali) — pjesa tjetër shkon me kartelë'); setPaying(false); return }
+        payments = [{ type: 'cash', amount: cashPart }, { type: 'card', amount: totalCents - cashPart }]
+      } else if (payMethod === 'cash') {
+        const tendered = Math.round((parseFloat(change.replace(',', '.')) || 0) * 100)
+        payments = [{ type: 'cash', amount: tendered > totalCents ? tendered : totalCents }]
+      } else if (payMethod === 'card') {
+        payments = [{ type: 'card', amount: totalCents }]
       }
-      const res = await fetch('/api/pos/fiscalize', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+      const sale = {
+        companyId: company.id, userId, isMockMode,
+        paymentMethod: payMethod === 'split' ? 'cash' : payMethod,
+        payments, saleDiscount,
+        debtClientId: debtClient?.id, debtClientName: debtClient?.name,
+        operatorName: currentCashier?.name, items,
+      }
+
+      const finish = (data: any, offline: boolean) => {
+        setSavedCart([...cart])
+        setReceipt({ ...data, offline })
+        const cashAmt = (payments ?? []).filter(p => p.type === 'cash').reduce((a, p) => a + p.amount, 0) / 100 - (data.change ?? 0) / 100
+        const cardAmt = (payments ?? []).filter(p => p.type === 'card').reduce((a, p) => a + p.amount, 0) / 100
+        setShift(s => ({ ...s, total_cash: s.total_cash + Math.max(0, cashAmt), total_card: s.total_card + cardAmt }))
+        setCart([]); setDebtClient(null); setSaleDiscount(null); setChange(''); setSplitCash('')
+      }
+
+      const goOffline = async () => {
+        if (payMethod === 'debt') throw new Error('Shitja me borxh kërkon internet')
+        const r: OfflineSaleResult = await createOfflineSale(sale, currentCashier?.name || 'Operator')
+        await refreshPending()
+        finish({ couponId: r.couponId, dailyCouponNo: r.dailyNo, qrCodeData: r.qrCode, qrCode: r.qrCode, change: r.calc.change, offlineReceipt: r.receipt }, true)
+        toast.warning(`Pa internet — kuponi #${r.couponId} u lëshua OFFLINE dhe do të dërgohet automatikisht`)
+      }
+
+      if (!navigator.onLine) { await goOffline(); return }
+
+      const nums = await numbersForOnlineSale().catch(() => null)
+      let res: Response
+      try {
+        res = await fetch('/api/pos/fiscalize', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...sale, ...(nums ?? {}) }), signal: AbortSignal.timeout(12_000),
+        })
+      } catch (err) {
+        if (isNetworkError(err)) { setOnline(false); await goOffline(); return }
+        throw err
+      }
       const data = await res.json()
       if (!res.ok) throw new Error(data.error||'Gabim')
-      setSavedCart([...cart])
-      setReceipt(data)
-      setShift(s=>({...s, [payMethod==='cash'?'total_cash':'total_card']: s[payMethod==='cash'?'total_cash':'total_card']+totals.total}))
-      setCart([]); setDebtClient(null)
-      toast.success(payMethod==='debt'?`Borxh regjistruar — ${debtClient?.name}`:'Shitja u fiskalizua!')
+      await acknowledgeOnlineSale(data.dailyCouponNo)
+      finish(data, false)
+      toast.success(payMethod==='debt'?`Borxh regjistruar — ${debtClient?.name}`:data.status==='offline'?'ATK s\'u arrit — kuponi u ruajt dhe dërgohet automatikisht':'Shitja u fiskalizua!')
     } catch(e:any) {
       toast.error(e.message)
     } finally {
@@ -606,6 +701,17 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
         </button>
       </div>
 
+      {/* Njoftimi OFFLINE (Neni 26.12) */}
+      {(!online || pending > 0) && (
+        <div role="status" aria-live="polite" style={{ padding:'8px 16px', display:'flex', alignItems:'center', gap:10, fontSize:13, fontWeight:700,
+          background: online ? '#EEF2FF' : '#FEF3C7', color: online ? '#3730A3' : '#92400E', borderBottom: `1px solid ${online ? '#C7D2FE' : '#FDE68A'}` }}>
+          <AlertTriangle size={15}/>
+          {online
+            ? <>Po dërgohen {pending} kupon{pending === 1 ? '' : 'ë'} offline te ATK…</>
+            : <>OFFLINE — pa internet. Arka vazhdon punën: kuponët nënshkruhen këtu, printohen me „OFFLINE” dhe dërgohen automatikisht kur kthehet interneti.{pending > 0 ? ` (${pending} në pritje)` : ''}</>}
+        </div>
+      )}
+
       {/* Body */}
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
 
@@ -685,10 +791,10 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
                   <span style={{ fontSize:13, fontWeight:700, color:'#111827', minWidth:20, textAlign:'center' as const }}>{item.quantity}</span>
                   <button onClick={()=>updateQty(item.productId,1)} style={{ width:24, height:24, borderRadius:6, border:'1px solid #E2DCFF', background:'#F3F4F6', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'#111827' }}><Plus size={12}/></button>
                   <span style={{ flex:1 }}/>
-                  <button onClick={()=>setShowDiscount(item.productId)} style={{ fontSize:11, color:C.purpleL, fontWeight:600, background:'none', border:'none', cursor:'pointer' }}>
-                    {item.discount?`-${item.discount}%`:'Zbritje'}
+                  <button onClick={()=>{ setShowDiscount(item.productId); setDiscKind('percent'); setDiscInput('') }} style={{ fontSize:11, color:C.purpleL, fontWeight:600, background:'none', border:'none', cursor:'pointer' }}>
+                    {(() => { const d = itemDiscount(item); return d ? (d.kind === 'percent' ? `-${d.value}%` : `-€${(d.value/100).toFixed(2)}`) : 'Zbritje' })()}
                   </button>
-                  <span style={{ fontSize:14, fontWeight:800, color:C.purpleL }}>{fmtEUR(Math.round(item.price*item.quantity*(1-(item.discount||0)/100)))}</span>
+                  <span style={{ fontSize:14, fontWeight:800, color:C.purpleL }}>€{(((totals.calc?.lines.find(l => l.productId === item.productId || l.name === item.name)?.grossTotal ?? 0) - (totals.calc?.lines.find(l => l.productId === item.productId || l.name === item.name)?.itemDiscount ?? 0)) / 100).toFixed(2)}</span>
                 </div>
               </div>
             ))}
@@ -696,6 +802,23 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
 
           {/* Totali + Pagesa */}
           <div style={{ padding:16, borderTop:'1.5px solid '+C.border }}>
+            {totals.calc && totals.calc.saleDiscount && (
+              <>
+                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+                  <span style={{ fontSize:13, color:'#6B7280' }}>Nëntotali</span>
+                  <span style={{ fontSize:13, fontWeight:600, color:'#374151' }}>€{(totals.calc.subtotal/100).toFixed(2)}</span>
+                </div>
+                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+                  <span style={{ fontSize:13, color:C.purpleL }}>Zbritje {totals.calc.saleDiscount.kind === 'percent' ? `${totals.calc.saleDiscount.value}%` : ''}</span>
+                  <span style={{ fontSize:13, fontWeight:700, color:C.purpleL }}>-€{(totals.calc.saleDiscount.amount/100).toFixed(2)}</span>
+                </div>
+              </>
+            )}
+            <button onClick={()=>{ setShowSaleDiscount(true); setDiscKind('percent'); setDiscInput('') }} disabled={cart.length===0}
+              style={{ width:'100%', marginBottom:8, padding:'6px 10px', borderRadius:8, border:'1px dashed #C4B5FD', background:'transparent', fontSize:12, fontWeight:700, color:C.purpleL, cursor: cart.length===0 ? 'not-allowed' : 'pointer' }}>
+              {saleDiscount ? 'Ndrysho zbritjen në total' : '+ Zbritje në total'}
+            </button>
+            {totals.error && <div style={{ padding:'6px 10px', borderRadius:8, background:'#FEF2F2', color:C.red, fontSize:12, fontWeight:600, marginBottom:8 }}>{totals.error}</div>}
             <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
               <span style={{ fontSize:13, color:'#6B7280' }}>TVSH</span>
               <span style={{ fontSize:13, fontWeight:600, color:'#374151' }}>€{totals.tax.toFixed(2)}</span>
@@ -706,8 +829,8 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
             </div>
 
             {/* Metoda pagese */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6, marginBottom:12 }}>
-              {([['cash','Cash',Banknote],[' card','Kartë',CreditCard],['debt','Borxh',Users]] as any[]).map(([m,l,Icon])=>(
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:6, marginBottom:12 }}>
+              {([['cash','Cash',Banknote],[' card','Kartë',CreditCard],['split','Cash+Kartë',DollarSign],['debt','Borxh',Users]] as any[]).map(([m,l,Icon])=>(
                 <button key={m} onClick={()=>{ setPayMethod(m.trim()); if(m.trim()==='debt')setShowDebt(true) }}
                   style={{ padding:'8px 4px', borderRadius:8, border:'2px solid '+(payMethod===m.trim()?'#7C3AED':'#E2DCFF'),
                     background:payMethod===m.trim()?'#EEF2FF':'#F9FAFB', cursor:'pointer', fontSize:11, fontWeight:700,
@@ -720,6 +843,19 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
             {payMethod==='debt' && debtClient && (
               <div style={{ padding:'8px 12px', borderRadius:8, background:'#FEF3C7', border:'1px solid #FDE68A', marginBottom:10 }}>
                 <span style={{ fontSize:12, fontWeight:700, color:'#92400E' }}>📋 {debtClient.name}</span>
+              </div>
+            )}
+
+            {payMethod==='split' && (
+              <div style={{ marginBottom:8 }}>
+                <input type="number" inputMode="decimal" value={splitCash} onChange={e=>setSplitCash(e.target.value)} placeholder="Sa paguhet CASH (€)…"
+                  aria-label="Pjesa cash"
+                  style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #E2DCFF', fontSize:13, color:'#111827', outline:'none', marginBottom:6, boxSizing:'border-box' as const }}/>
+                {parseFloat(splitCash) > 0 && parseFloat(splitCash) < totals.total && (
+                  <div style={{ padding:'6px 12px', borderRadius:8, background:'#EEF2FF', fontSize:12, fontWeight:700, color:'#3730A3' }}>
+                    Cash €{parseFloat(splitCash).toFixed(2)} + Kartë €{(totals.total - parseFloat(splitCash)).toFixed(2)}
+                  </div>
+                )}
               </div>
             )}
 
@@ -774,7 +910,9 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
       {showDiscount && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999 }}>
           <div style={{ background:'white', borderRadius:16, padding:24, width:280 }}>
-            <h4 style={{ fontSize:15, fontWeight:700, color:'#111827', marginBottom:16 }}>Vendos Zbritjen</h4>
+            <h4 style={{ fontSize:15, fontWeight:700, color:'#111827', marginBottom:12 }}>Zbritje në artikull</h4>
+            <DiscountEditor kind={discKind} setKind={setDiscKind} value={discInput} setValue={setDiscInput} onApply={()=>applyCustomDiscount(showDiscount)} />
+            <p style={{ fontSize:11, color:'#6B7280', margin:'4px 0 8px' }}>Ose zgjidh shpejt:</p>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, marginBottom:12 }}>
               {[5,10,15,20,25,30,50].map(d=>(
                 <button key={d} onClick={()=>setDiscount(showDiscount,d)}
@@ -788,6 +926,20 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
         </div>
       )}
 
+      {/* Zbritje në total */}
+      {showSaleDiscount && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999 }}>
+          <div role="dialog" aria-label="Zbritje në total" style={{ background:'white', borderRadius:16, padding:24, width:300 }}>
+            <h4 style={{ fontSize:15, fontWeight:700, color:'#111827', marginBottom:12 }}>Zbritje në total</h4>
+            <DiscountEditor kind={discKind} setKind={setDiscKind} value={discInput} setValue={setDiscInput} onApply={()=>applyCustomDiscount('sale')} />
+            <div style={{ display:'flex', gap:8, marginTop:8 }}>
+              {saleDiscount && <button onClick={()=>{ setSaleDiscount(null); setShowSaleDiscount(false) }} style={{ flex:1, padding:10, borderRadius:8, border:'1px solid #FECACA', background:'#FEF2F2', fontSize:13, color:C.red, cursor:'pointer', fontWeight:600 }}>Hiq zbritjen</button>}
+              <button onClick={()=>setShowSaleDiscount(false)} style={{ flex:1, padding:10, borderRadius:8, border:'none', background:'#F4F2FF', fontSize:13, color:'#374151', cursor:'pointer', fontWeight:600 }}>Anulo</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Receipt */}
       {receipt && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:999 }}>
@@ -795,11 +947,16 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
             <div style={{ width:56, height:56, borderRadius:14, background:'#F0FDF4', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
               <Check size={28} color={C.green}/>
             </div>
-            <h3 style={{ fontSize:18, fontWeight:800, color:'#111827', marginBottom:4 }}>Shitja u fiskalizua!</h3>
-            <p style={{ fontSize:13, color:'#6B7280', marginBottom:20 }}>FIC: {receipt.fic?.slice(0,16)}...</p>
-            {receipt.qrCode && <div style={{ margin:'0 auto 20px', width:140, height:140 }}><QRCanvas value={receipt.qrCode} size={140}/></div>}
+            <h3 style={{ fontSize:18, fontWeight:800, color:'#111827', marginBottom:4 }}>
+              {receipt.offline || receipt.status === 'offline' ? 'Kuponi u lëshua OFFLINE' : 'Shitja u fiskalizua!'}
+            </h3>
+            <p style={{ fontSize:13, color:'#6B7280', marginBottom:4 }}>Kuponi #{receipt.couponId}{receipt.dailyCouponNo ? ` · ditor ${String(receipt.dailyCouponNo).padStart(4,'0')}` : ''}</p>
+            {(receipt.offline || receipt.status === 'offline') && <p style={{ fontSize:12, color:'#92400E', fontWeight:700, marginBottom:12 }}>Do të dërgohet te ATK automatikisht</p>}
+            {receipt.change > 0 && <p style={{ fontSize:15, color:C.green, fontWeight:800, marginBottom:12 }}>Kusuri: €{(receipt.change/100).toFixed(2)}</p>}
+            {(receipt.qrCodeData || receipt.qrCode) && <div style={{ margin:'8px auto 20px', width:140, height:140 }}><QRCanvas data={receipt.qrCodeData || receipt.qrCode} size={140}/></div>}
             <div style={{ display:'flex', gap:10 }}>
               <button onClick={()=>{
+                if (receipt.offlineReceipt) { printOfflineReceipt(receipt.offlineReceipt, getPaperWidth()); return }
                 const atk = buildATKReceipt(receipt, savedCart, company, {
                   paymentMethod: payMethod,
                   operatorName: currentCashier?.name
@@ -829,6 +986,33 @@ export default function MarketPOS({ userId, company, devices, initialProducts, i
           }
         ` : ''}
       `}</style>
+    </div>
+  )
+}
+
+// ── Zbritja: % ose vlerë (€) ─────────────────────────────────────────────
+function DiscountEditor({ kind, setKind, value, setValue, onApply }: {
+  kind: 'percent'|'amount'; setKind: (k: 'percent'|'amount') => void
+  value: string; setValue: (v: string) => void; onApply: () => void
+}) {
+  return (
+    <div>
+      <div role="radiogroup" aria-label="Lloji i zbritjes" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:8 }}>
+        {([['percent','Në %'],['amount','Në vlerë (€)']] as const).map(([k,l]) => (
+          <button key={k} type="button" role="radio" aria-checked={kind===k} onClick={()=>setKind(k)}
+            style={{ padding:'7px 8px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer',
+              border:`1.5px solid ${kind===k ? '#7C3AED' : '#E2DCFF'}`, background: kind===k ? '#EEF2FF' : 'white', color: kind===k ? '#5B21B6' : '#374151' }}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <div style={{ display:'flex', gap:6 }}>
+        <input autoFocus type="number" inputMode="decimal" min={0} step="any" value={value} onChange={e=>setValue(e.target.value)}
+          onKeyDown={e=>{ if (e.key==='Enter') onApply() }}
+          placeholder={kind==='percent' ? 'p.sh. 12.5' : 'p.sh. 1.50'} aria-label="Vlera e zbritjes"
+          style={{ flex:1, padding:'9px 10px', borderRadius:8, border:'1.5px solid #E2DCFF', fontSize:14, color:'#111827', outline:'none', minWidth:0 }}/>
+        <button type="button" onClick={onApply} style={{ padding:'9px 14px', borderRadius:8, border:'none', background:'#7C3AED', color:'white', fontSize:13, fontWeight:700, cursor:'pointer' }}>Apliko</button>
+      </div>
     </div>
   )
 }

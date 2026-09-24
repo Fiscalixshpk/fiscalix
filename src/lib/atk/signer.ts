@@ -20,8 +20,8 @@ export function loadPrivateKey(pem: string): KeyObject {
   return key
 }
 
-export function signProto(protoBytes: Buffer, privateKeyPem: string): SignedPayload {
-  const base64Data = protoBytes.toString('base64')
+export function signProto(protoBytes: Uint8Array, privateKeyPem: string): SignedPayload {
+  const base64Data = Buffer.from(protoBytes).toString('base64')
   const signature = sign('sha256', Buffer.from(base64Data, 'utf8'), { key: loadPrivateKey(privateKeyPem), dsaEncoding: 'der' })
   return { base64Data, base64Sig: signature.toString('base64') }
 }

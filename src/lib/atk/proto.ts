@@ -5,6 +5,7 @@
 //  - fushat me vlerë default (0, "", 0.0) NUK serializohen
 //  - int64 negativ → varint 10-bajtësh (two's complement)
 //  - float → wire type 5 (fixed32, little-endian IEEE-754)
+//  - izomorfik: punon në server (Node) dhe në shfletues (offline) — vetëm Uint8Array
 
 import { COUPON_TYPE, PAYMENT_TYPE, type CouponType, type PaymentKind, type TaxRate } from './constants'
 
@@ -35,6 +36,7 @@ export interface ProtoCitizenCoupon {
   total: number; taxGroups: ProtoTaxGroup[]; totalTax: number; totalNoTax: number
 }
 
+const UTF8 = new TextEncoder()
 const ZERO = BigInt(0), SEVEN = BigInt(7), MASK7 = BigInt(0x7f), TWO_64 = BigInt(2) ** BigInt(64)
 
 class Writer {
@@ -54,18 +56,18 @@ class Writer {
   }
   string(field: number, value: string) {
     if (!value) return this
-    const b = Buffer.from(value, 'utf8')
+    const b = UTF8.encode(value)
     this.tag(field, 2); this.varint(BigInt(b.length)); this.bytes.push(...b); return this
   }
   float(field: number, value: number) {
     if (value === 0) return this
-    const b = Buffer.alloc(4); b.writeFloatLE(value, 0)
+    const b = new Uint8Array(4); new DataView(b.buffer).setFloat32(0, value, true)
     this.tag(field, 5); this.bytes.push(...b); return this
   }
-  message(field: number, value: Buffer) {
+  message(field: number, value: Uint8Array) {
     this.tag(field, 2); this.varint(BigInt(value.length)); this.bytes.push(...value); return this
   }
-  finish() { return Buffer.from(this.bytes) }
+  finish(): Uint8Array { return Uint8Array.from(this.bytes) }
 }
 
 const encodeItem = (i: ProtoCouponItem) => new Writer()
@@ -78,7 +80,7 @@ const encodePayment = (p: ProtoPayment) => new Writer()
 const encodeTaxGroup = (t: ProtoTaxGroup) => new Writer()
   .string(1, t.taxRate).int(2, t.totalForTax).int(3, t.totalTax).finish()
 
-export function encodePosCoupon(c: ProtoPosCoupon): Buffer {
+export function encodePosCoupon(c: ProtoPosCoupon): Uint8Array {
   const w = new Writer()
     .int(1, c.businessId).int(2, c.couponId).int(3, c.branchId).string(4, c.location)
     .string(5, c.operatorId).int(6, c.posId).int(7, c.applicationId).string(8, c.verificationNo)
@@ -91,10 +93,17 @@ export function encodePosCoupon(c: ProtoPosCoupon): Buffer {
     .int(18, c.transactionNo).int(19, c.totalDiscount).finish()
 }
 
-export function encodeCitizenCoupon(c: ProtoCitizenCoupon): Buffer {
+export function encodeCitizenCoupon(c: ProtoCitizenCoupon): Uint8Array {
   const w = new Writer()
     .int(1, c.businessId).int(2, c.couponId).int(3, c.branchId).int(4, c.posId)
     .string(5, c.verificationNo).int(6, COUPON_TYPE[c.type]).int(7, c.time).int(8, c.total)
   c.taxGroups.forEach(t => w.message(9, encodeTaxGroup(t)))
   return w.int(10, c.totalTax).int(11, c.totalNoTax).finish()
+}
+
+/** base64 izomorfik (server + shfletues) */
+export function toBase64(bytes: Uint8Array): string {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
 }

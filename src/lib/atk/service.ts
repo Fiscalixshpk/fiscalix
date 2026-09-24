@@ -2,9 +2,9 @@
 // Përdoret nga /api/pos/fiscalize, /api/pos/cancel, /api/pos/sync-offline dhe cron.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { calculate, CalcError, type CalcInput, type CalcItemInput, type CalcPaymentInput, type CalcResult, type Discount } from './calc'
+import { CalcError, type CalcItemInput, type CalcResult } from './calc'
 import { buildCoupon, type BuiltCoupon } from './coupon'
-import { GENESIS_HASH, OFFLINE_DEADLINE_HOURS, isPaymentKind, isTaxRate, type AtkEnvironment, type CouponType, type PaymentKind } from './constants'
+import { GENESIS_HASH, OFFLINE_DEADLINE_HOURS, type AtkEnvironment, type CouponType } from './constants'
 import { computeLink } from './hash-chain'
 import { decryptPrivateKey } from './keys'
 import { atkUnixTime, submitPosCoupon, type SubmitResult } from './transport'
@@ -23,7 +23,7 @@ export interface FiscalContext {
   location: string
   device: {
     id: string; posId: number; branchId: number; applicationId: number
-    environment: AtkEnvironment; clockOffsetMs: number; privateKeyPem: string
+    environment: AtkEnvironment; clockOffsetMs: number; privateKeyPem: string; certificatePem: string | null
   }
 }
 
@@ -51,7 +51,7 @@ export async function loadFiscalContext(db: DB, companyId: string): Promise<Fisc
   if (!nui) throw new FiscalError('NUI mungon — shtoje te Cilësimet → Kompania')
 
   const { data: device } = await db.from('pos_devices')
-    .select('id, pos_id, branch_id, application_id, environment, status, private_key_enc, clock_offset_ms')
+    .select('id, pos_id, branch_id, application_id, environment, status, private_key_enc, certificate_pem, clock_offset_ms')
     .eq('company_id', companyId).in('status', ['active', 'onboarded'])
     .not('private_key_enc', 'is', null)
     .order('created_at', { ascending: true }).limit(1).maybeSingle()
@@ -70,74 +70,12 @@ export async function loadFiscalContext(db: DB, companyId: string): Promise<Fisc
       environment: effectiveEnvironment(device.environment),
       clockOffsetMs: Number(device.clock_offset_ms ?? 0),
       privateKeyPem: decryptPrivateKey(device.private_key_enc),
+      certificatePem: device.certificate_pem ?? null,
     },
   }
 }
 
-// ── Normalizimi i kërkesës nga klientët ekzistues ────────────────
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export function parseDiscount(raw: any, legacyPercent?: unknown): Discount | null {
-  if (raw && typeof raw === 'object' && (raw.kind === 'percent' || raw.kind === 'amount')) {
-    const value = Number(raw.value)
-    return Number.isFinite(value) && value > 0 ? { kind: raw.kind, value } : null
-  }
-  const p = Number(legacyPercent)
-  return Number.isFinite(p) && p > 0 ? { kind: 'percent', value: p } : null
-}
-
-export function parseSaleItems(items: any[]): CalcItemInput[] {
-  if (!Array.isArray(items) || !items.length) throw new CalcError('Shporta është bosh')
-  return items.map((i, idx) => {
-    const taxRate = i.taxRate ?? i.tax_rate ?? 'E'
-    if (!isTaxRate(taxRate)) throw new CalcError(`Norma e TVSH-së e pavlefshme te artikulli ${idx + 1}`)
-    const unitPrice = Math.round(Number(i.customPrice ?? i.price))
-    return {
-      name: String(i.name ?? ''),
-      unit: String(i.unit ?? 'cope'),
-      unitPrice,
-      quantity: Number(i.quantity),
-      taxRate,
-      discount: parseDiscount(i.itemDiscount ?? (i.discountType ? { kind: i.discountType, value: i.discountValue } : null), i.discount),
-      productId: typeof i.productId === 'string' && /^[0-9a-f-]{36}$/i.test(i.productId) ? i.productId : null,
-    }
-  })
-}
-
-const LEGACY_METHOD: Record<string, PaymentKind> = { cash: 'cash', card: 'card', voucher: 'voucher', insurance: 'other', other: 'other', cheque: 'cheque' }
-
-/** payments[] | splitPayment{cash,card} | paymentMethod (+ tendered) */
-export function parsePayments(body: any): CalcPaymentInput[] | { method: PaymentKind; tendered?: number } {
-  if (Array.isArray(body.payments) && body.payments.length) {
-    return body.payments.map((p: any) => {
-      if (!isPaymentKind(p.type)) throw new CalcError(`Mënyrë pagese e panjohur: ${p.type}`)
-      return { type: p.type, amount: Math.round(Number(p.amount)) }
-    })
-  }
-  if (body.splitPayment && (body.splitPayment.cash || body.splitPayment.card)) {
-    return [
-      { type: 'cash' as const, amount: Math.round(Number(body.splitPayment.cash) || 0) },
-      { type: 'card' as const, amount: Math.round(Number(body.splitPayment.card) || 0) },
-    ]
-  }
-  const method = LEGACY_METHOD[body.paymentMethod] ?? 'cash'
-  const tendered = Number(body.tendered)
-  return { method, tendered: Number.isFinite(tendered) && tendered > 0 ? Math.round(tendered) : undefined }
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
-
-/** Llogarit; nëse klienti dha vetëm mënyrën e pagesës, shuma = totali (ose tendered për cash) */
-export function calculateSale(args: {
-  items: CalcItemInput[]; vatRegistered: boolean; saleDiscount: Discount | null
-  payments: ReturnType<typeof parsePayments>
-}): CalcResult {
-  const base: Omit<CalcInput, 'payments'> = { items: args.items, vatRegistered: args.vatRegistered, saleDiscount: args.saleDiscount }
-  if (Array.isArray(args.payments)) return calculate({ ...base, payments: args.payments })
-  const probe = calculate({ ...base, payments: [{ type: 'cash', amount: Number.MAX_SAFE_INTEGER }] })
-  const { method, tendered } = args.payments
-  const amount = method === 'cash' && tendered ? tendered : probe.total
-  return calculate({ ...base, payments: [{ type: method, amount }] })
-}
+export { parseDiscount, parseSaleItems, parsePayments, calculateSale } from './sale-input'
 
 // ── Numri i kuponit (atomik, pa përsëritje) ──────────────────────
 
@@ -171,17 +109,42 @@ export async function issueCoupon(db: DB, ctx: FiscalContext, args: {
 }): Promise<IssueResult> {
   const time = args.time ?? atkUnixTime(ctx.device.clockOffsetMs)
   const coupon = buildCoupon({
-    meta: { businessId: ctx.nui, branchId: ctx.device.branchId, posId: ctx.device.posId,
-      applicationId: ctx.device.applicationId, location: ctx.location, operatorId: args.operator || 'Operator' },
+    meta: couponMeta(ctx, args.operator),
     calc: args.calc, couponId: args.couponId, type: args.type, referenceNo: args.referenceNo,
     time, privateKeyPem: ctx.device.privateKeyPem,
   })
+  return submitBuiltCoupon(db, ctx, args.saleId, coupon)
+}
 
-  const { logId, chain } = await appendToChain(db, ctx, args.saleId, coupon)
+export function couponMeta(ctx: FiscalContext, operator: string) {
+  return {
+    businessId: ctx.nui, branchId: ctx.device.branchId, posId: ctx.device.posId,
+    applicationId: ctx.device.applicationId, location: ctx.location, operatorId: operator || 'Operator',
+  }
+}
+
+/** Kupon tashmë i nënshkruar (në server ose nga arka offline) → zinxhir + log + dërgim te ATK */
+export async function submitBuiltCoupon(db: DB, ctx: FiscalContext, saleId: string, coupon: BuiltCoupon): Promise<IssueResult> {
+  const { logId, chain } = await appendToChain(db, ctx, saleId, coupon)
   const result = await submitPosCoupon(ctx.device.environment, coupon.posPayload, coupon.posSignature)
-  const status = await recordSubmission(db, ctx.device.id, logId, args.saleId, result, 1)
-
+  const status = await recordSubmission(db, ctx.device.id, logId, saleId, result, 1)
   return { coupon, logId, status, transactionId: result.transactionId, error: result.error, chain }
+}
+
+/** Numri i kuponit i dhënë nga arka duhet të jetë në një bllok të rezervuar për të */
+export async function assertCouponInBlock(db: DB, deviceId: string, couponId: number) {
+  const { data } = await db.from('atk_coupon_blocks').select('id')
+    .eq('pos_device_id', deviceId).lte('start_no', couponId).gte('end_no', couponId).limit(1).maybeSingle()
+  if (!data) throw new FiscalError(`Numri i kuponit ${couponId} nuk i përket kësaj arke`, 409)
+}
+
+/** Kategoria ATK (CouponItem.Type) merret nga produkti në databazë, jo nga klienti */
+export async function applyItemCategories(db: DB, companyId: string, items: CalcItemInput[]) {
+  const ids = [...new Set(items.map(i => i.productId).filter((x): x is string => !!x))]
+  if (!ids.length) return
+  const { data } = await db.from('pos_products').select('id, atk_category').in('id', ids).eq('company_id', companyId)
+  const cat = new Map((data ?? []).map(p => [p.id as string, p.atk_category as string | null]))
+  for (const i of items) if (i.productId) i.itemType = cat.get(i.productId) ?? null
 }
 
 async function appendToChain(db: DB, ctx: FiscalContext, saleId: string, c: BuiltCoupon) {
