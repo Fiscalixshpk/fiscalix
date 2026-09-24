@@ -286,7 +286,7 @@ body { width: ${paper}mm; padding: 3mm ${paper === 58 ? 2 : 4}mm 6mm; font: 400 
 .rule.hash { font-size: 8px; line-height: 1; letter-spacing: -.5px; white-space: nowrap; overflow: hidden }
 .gap { height: 6px }
 .qr { width: ${paper === 58 ? 30 : 34}mm; height: auto; margin: 3px 0; image-rendering: pixelated }
-.flogo { width: 18mm; height: auto; margin-top: 2px }
+.flogo { width: 15.5mm; height: auto; margin-top: 2px } /* ≈ 15.5 × 10 mm */
 .blogo { max-width: 60%; max-height: 18mm; margin-bottom: 2px }
 @media screen { html { background: #e5e7eb } body { margin: 16px auto; box-shadow: 0 1px 3px rgba(0,0,0,.2) } }
 </style></head><body>
