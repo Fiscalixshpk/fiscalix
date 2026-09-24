@@ -341,10 +341,34 @@ ${logoHTML}
 // Kuponi fiskal gjenerohet GJITHMONË nga serveri kur ka saleId: totalet, TVSH-ja dhe QR
 // vijnë nga databaza, jo nga shporta e klientit. HTML-i lokal mbetet vetëm si rezervë.
 export function printReceipt(data: ReceiptData): void {
-  if (data.saleId) {
-    import('@/lib/atk/print-client').then(({ printFiscalReceipt }) => printFiscalReceipt(data.saleId!))
+  if (data.saleId || data.qrCodeData) {
+    printOfficial(data).then(ok => { if (!ok) printLegacy(data) })
     return
   }
+  printLegacy(data)
+}
+
+/** Kuponi zyrtar nga serveri — gjen shitjen nga saleId ose nga QR-ja */
+async function printOfficial(data: ReceiptData, preview = false): Promise<boolean> {
+  try {
+    let saleId = data.saleId
+    if (!saleId && data.qrCodeData) {
+      const res = await fetch('/api/pos/receipt/lookup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qr: data.qrCodeData }),
+      })
+      if (!res.ok) return false
+      saleId = ((await res.json()) as { saleId?: string }).saleId
+    }
+    if (!saleId) return false
+    const { printFiscalReceipt, previewFiscalReceipt } = await import('@/lib/atk/print-client')
+    if (preview) { previewFiscalReceipt(saleId); return true }
+    return await printFiscalReceipt(saleId)
+  } catch {
+    return false
+  }
+}
+
+function printLegacy(data: ReceiptData): void {
   const html = buildReceiptHTML(data)
   const w = window.open('', '_blank')
   if (!w) { console.error('Popup i bllokuar'); return }
@@ -355,10 +379,14 @@ export function printReceipt(data: ReceiptData): void {
 }
 
 export function previewReceipt(data: ReceiptData): void {
-  if (data.saleId) {
-    import('@/lib/atk/print-client').then(({ previewFiscalReceipt }) => previewFiscalReceipt(data.saleId!))
+  if (data.saleId || data.qrCodeData) {
+    printOfficial(data, true).then(ok => { if (!ok) previewLegacy(data) })
     return
   }
+  previewLegacy(data)
+}
+
+function previewLegacy(data: ReceiptData): void {
   const html = buildReceiptHTML(data)
   const w = window.open('', '_blank', 'width=320,height=700,scrollbars=yes')
   if (!w) return
