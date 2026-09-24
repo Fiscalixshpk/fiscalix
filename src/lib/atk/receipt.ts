@@ -272,8 +272,8 @@ export function renderReceiptHtml(rows: Row[], opts: { qrDataUrl: string; paperM
   return `<!doctype html><html lang="sq"><head><meta charset="utf-8"><title>${esc(opts.title ?? 'Kupon fiskal')}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-@page { size: ${paper}mm auto; margin: 0 }
-* { box-sizing: border-box; margin: 0; padding: 0 }
+@page { size: ${paper}mm 297mm; margin: 0 }
+* { box-sizing: border-box; margin: 0; padding: 0; break-inside: avoid }
 html, body { background: #fff; color: #000 }
 body { width: ${paper}mm; padding: 3mm ${paper === 58 ? 2 : 4}mm 6mm; font: 400 ${paper === 58 ? 10 : 11.5}px/1.35 "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; -webkit-print-color-adjust: exact; print-color-adjust: exact }
 .c { text-align: center } .r { text-align: right } .b { font-weight: 700 } .i { font-style: italic }
@@ -288,10 +288,27 @@ body { width: ${paper}mm; padding: 3mm ${paper === 58 ? 2 : 4}mm 6mm; font: 400 
 .qr { width: ${paper === 58 ? 30 : 34}mm; height: auto; margin: 3px 0; image-rendering: pixelated }
 .flogo { width: 15.5mm; height: auto; margin-top: 2px } /* ≈ 15.5 × 10 mm */
 .blogo { max-width: 60%; max-height: 18mm; margin-bottom: 2px }
+${paper === 58 ? `.xl { font-size: 1.32em } .lg { font-size: 1.2em } .sm { font-size: .86em }
+.kv span:first-child { white-space: nowrap } .cols { grid-template-columns: 1fr auto minmax(13mm, auto); gap: 3px }` : ''}
 @media screen { html { background: #e5e7eb } body { margin: 16px auto; box-shadow: 0 1px 3px rgba(0,0,0,.2) } }
 </style></head><body>
 ${body}
-${opts.autoPrint ? '<script>window.addEventListener("load",()=>{setTimeout(()=>{window.print()},150)})</script>' : ''}
+<script>
+// Chrome injoron "size: … auto" → faqja do të ndahej në dysh. Masim gjatësinë reale
+// të kuponit dhe e vendosim faqen saktësisht aq të gjatë: një kupon = një faqe.
+(function(){
+  function fit(){
+    var mm = Math.ceil(document.documentElement.scrollHeight * 25.4 / 96) + 4;
+    var st = document.getElementById('page-size') || document.head.appendChild(Object.assign(document.createElement('style'), { id: 'page-size' }));
+    st.textContent = '@page { size: ${paper}mm ' + mm + 'mm; margin: 0 }';
+  }
+  window.addEventListener('load', function(){
+    var imgs = Array.prototype.slice.call(document.images).map(function(i){ return i.complete ? 0 : new Promise(function(r){ i.onload = i.onerror = r }) });
+    Promise.all(imgs).then(function(){ fit(); ${opts.autoPrint ? 'setTimeout(function(){ window.print() }, 150);' : ''} });
+  });
+  window.addEventListener('beforeprint', fit);
+})();
+</script>
 </body></html>`
 }
 

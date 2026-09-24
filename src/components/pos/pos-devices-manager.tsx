@@ -1,7 +1,8 @@
 'use client'
 // Settings → Pajisjet POS — shto, edito, fshi arka
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { getPaperWidth, setPaperWidth, type PaperWidth } from '@/lib/atk/print-client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
@@ -39,6 +40,10 @@ export default function POSDevicesManager({ companyId, companyNui, companyName, 
     cashier_name: '',
     environment:  'TEST' as 'TEST' | 'PROD',
   })
+
+  const [paper, setPaper] = useState<PaperWidth>(80)
+  useEffect(() => { setPaper(getPaperWidth()) }, [])
+  function choosePaper(w: PaperWidth) { setPaperWidth(w); setPaper(w); toast.success(`Letra e printerit: ${w} mm`) }
 
   const env: 'TEST' | 'PROD' = process.env.NEXT_PUBLIC_ATK_ENVIRONMENT === 'PROD' ? 'PROD' : 'TEST'
 
@@ -109,6 +114,24 @@ export default function POSDevicesManager({ companyId, companyNui, companyName, 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Letra e printerit termik — ruhet në këtë kompjuter */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', borderRadius: 12, background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)', marginBottom: 2 }}>Letra e printerit</p>
+          <p style={{ fontSize: 11, color: 'var(--text-3)' }}>Gjerësia e letrës termike në këtë kompjuter</p>
+        </div>
+        <div role="radiogroup" aria-label="Letra e printerit" style={{ display: 'flex', gap: 6 }}>
+          {([58, 80] as const).map(w => (
+            <button key={w} type="button" role="radio" aria-checked={paper === w} onClick={() => choosePaper(w)}
+              style={{ padding: '7px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                border: `1px solid ${paper === w ? 'var(--purple)' : 'var(--border)'}`,
+                background: paper === w ? 'var(--purple)' : 'transparent', color: paper === w ? '#fff' : 'var(--text-2)' }}>
+              {w} mm
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
