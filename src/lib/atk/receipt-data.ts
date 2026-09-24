@@ -54,7 +54,7 @@ export async function loadReceiptInput(db: DB, saleId: string, opts: { companyId
 
   const [{ data: items }, { data: company }, { data: device }] = await Promise.all([
     db.from('sale_items').select(ITEM_COLS).eq('sale_id', sale.id),
-    db.from('companies').select('name, nui, vat_number, vat_number_atk, is_vat_registered, logo_url, address, city, location_city, phone, receipt_footer').eq('id', sale.company_id).single(),
+    db.from('companies').select('name, nui, tax_number, vat_number, vat_number_atk, is_vat_registered, logo_url, address, city, location_city, phone, receipt_footer').eq('id', sale.company_id).single(),
     db.from('pos_devices').select('pos_id, branch_id, environment, device_name, unit_number, unit_name, unit_address, unit_city, unit_phone').eq('id', sale.pos_device_id).maybeSingle(),
   ])
   if (!company) throw new ReceiptError('Kompania nuk u gjet')
@@ -85,7 +85,7 @@ export async function loadReceiptInput(db: DB, saleId: string, opts: { companyId
     ...toTotals(sale, items ?? []),
     business: {
       name: company.name,
-      nui: String(company.nui ?? '').replace(/\D/g, ''),
+      nui: String(company.nui || company.tax_number || '').replace(/\D/g, ''),
       vatNumber: company.vat_number_atk || company.vat_number || null,
       vatRegistered,
       logoUrl: company.logo_url || null,

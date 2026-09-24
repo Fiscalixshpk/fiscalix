@@ -58,7 +58,10 @@ export async function POST(req: NextRequest) {
       city:          city  || null,
       address:       address || null,
       website:       website || null,
-      vat_number:   nipt || nui || null,
+      // NUI ruhet te nui (fiskalizimi e lexon nga aty); numri i TVSH-së vetëm kur ka
+      nui:           nui || null,
+      tax_number:    nui || null,
+      vat_number:    nipt || null,
       business_type: business_type,
       pos_enabled:        pos_enabled ?? true,
       is_vat_registered:  is_vat_registered ?? false,

@@ -41,12 +41,13 @@ export class FiscalError extends Error {
 
 export async function loadFiscalContext(db: DB, companyId: string): Promise<FiscalContext> {
   const { data: company } = await db.from('companies')
-    .select('id, nui, location_city, pos_enabled, is_vat_registered, branch_id')
+    .select('id, nui, tax_number, location_city, pos_enabled, is_vat_registered, branch_id')
     .eq('id', companyId).single()
   if (!company) throw new FiscalError('Kompania nuk u gjet', 404)
   if (!company.pos_enabled) throw new FiscalError('POS nuk është aktivizuar për këtë kompani', 403)
 
-  const nui = Number(String(company.nui ?? '').replace(/\D/g, ''))
+  // Llogaritë e krijuara nga admin paneli e ruajnë NUI-n te tax_number
+  const nui = Number(String(company.nui || company.tax_number || '').replace(/\D/g, ''))
   if (!nui) throw new FiscalError('NUI mungon — shtoje te Cilësimet → Kompania')
 
   const { data: device } = await db.from('pos_devices')
